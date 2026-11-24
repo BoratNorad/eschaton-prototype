@@ -237,7 +237,21 @@
   }
 
   // ======================================================== map
-  let svg, gRoot, gCountries, gTrig, gFx, path, projection, features = [], centroids = {}, zoomK = 1;
+  let svg, gRoot, gCountries, gTrig, gFx, path, projection, features = [], centroids = {}, zoomK = 1, mapZoom = null;
+  function flyTo(lonlat) {
+    if (!mapZoom) return;
+    const [x, y] = projection(lonlat), k = 3;
+    svg.transition().duration(800).call(mapZoom.zoom.transform, d3.zoomIdentity.translate(mapZoom.width / 2 - x * k, mapZoom.height / 2 - y * k).scale(k));
+  }
+  // 21 crises: full names for your own crises, the selected one, or when zoomed in; others show just the timer
+  function trigLabels() {
+    if (!gTrig || !S) return;
+    gTrig.selectAll('g.trig').select('text').text((d) => {
+      const full = zoomK >= 2.2 || (selected?.kind === 'trigsit' && selected.id === d.id) || d.sides.includes(S.me?.coalition);
+      if (d.status !== 'active') return full ? `${d.name} ✓` : '✓';
+      return full ? `⚠ ${d.name} [${d.turnsLeft}]` : `[${d.turnsLeft}]`;
+    });
+  }
   async function initMap() {
     mapReady = true;
     const topo = await (await fetch('/vendor/countries-110m.json')).json();
@@ -284,8 +298,10 @@
     const zoom = d3.zoom().scaleExtent([1, 8]).translateExtent([[0, 0], [width, height]]).on('zoom', (ev) => {
       gRoot.attr('transform', ev.transform); zoomK = ev.transform.k;
       gTrig.selectAll('.trig').attr('transform', (d) => `translate(${projection(d.lonlat)}) scale(${1 / Math.sqrt(zoomK)})`);
+      trigLabels();
     });
     svg.call(zoom).on('dblclick.zoom', null);
+    mapZoom = { zoom, width, height };
     renderMapState();
   }
 
@@ -307,9 +323,9 @@
       e.append('text').attr('x', 8).attr('y', 3);
       return e;
     });
-    g.attr('class', (d) => `trig ${d.status}${selected?.kind === 'trigsit' && selected.id === d.id ? ' selected' : ''}`)
+    g.attr('class', (d) => `trig ${d.status}${selected?.kind === 'trigsit' && selected.id === d.id ? ' selected' : ''}${d.sides.includes(S.me?.coalition) ? ' mine' : ''}`)
       .attr('transform', (d) => `translate(${projection(d.lonlat)}) scale(${1 / Math.sqrt(zoomK)})`);
-    g.select('text').text((d) => d.status === 'active' ? `⚠ ${d.name} [${d.turnsLeft}]` : `${d.name} ✓`);
+    trigLabels();
   }
 
   function targetPoint(a) {
@@ -370,6 +386,7 @@
   function renderTab() {
     if (!S) return;
     if (tab === 'target') renderTarget();
+    if (tab === 'crises') renderCrises();
     if (tab === 'build') renderBuild();
     if (tab === 'intel') renderIntel();
     if (tab === 'diplo') renderDiplo();
@@ -475,6 +492,34 @@
       if ($('#wdBtn')) $('#wdBtn').onclick = () => addAction({ type: 'withdraw', trigsit: t.id, label: t.name });
       $('#tnBtn').onclick = () => addAction({ type: 'strike', kind: 'tactical', target: { kind: 'trigsit', id: t.id }, label: `${enemy} forces @ ${t.name}` });
     }
+  }
+
+  let crisesFilter = 'mine';
+  function renderCrises() {
+    const el = $('#tab-crises');
+    const me = S.me.coalition;
+    const list = S.trigsits.filter((t) => crisesFilter === 'all' || (crisesFilter === 'mine' ? t.sides.includes(me) : t.status === 'active'))
+      .sort((a, b) => (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1) || a.turnsLeft - b.turnsLeft);
+    const active = S.trigsits.filter((t) => t.status === 'active').length;
+    el.innerHTML = `<h3>CRISES</h3><p class="note">${active} of ${S.trigsits.length} TRIGSITs still active. The game ends when all are resolved. Click one to fly there.</p>
+      <div class="chips">${[['mine', `MY ${me}`], ['active', 'ACTIVE'], ['all', 'ALL']].map(([k, l]) => `<button class="chip ${crisesFilter === k ? 'on' : ''}" data-cf="${k}">${l}</button>`).join('')}
+        <a class="chip" href="/trigsits.html" target="_blank">📁 DOSSIERS</a></div>` +
+      list.map((t) => {
+        const [A, B] = t.sides, ctl = t.control / C.trigsit.winThreshold;
+        const bar = ctl >= 0 ? `<i style="left:${50 - ctl * 50}%;width:${ctl * 50}%;background:${col(A)}"></i>` : `<i style="left:50%;width:${-ctl * 50}%;background:${col(B)}"></i>`;
+        const status = t.status === 'active' ? `${t.turnsLeft}t left` : t.how === 'peace' ? '🕊 PEACE' : t.how === 'military' ? `⚔ ${t.winner}` : '⌛ FROZEN';
+        return `<div class="crisis ${t.status}${t.sides.includes(me) ? ' mine' : ''}" data-cr="${t.id}">
+          <div class="cr-top"><b>⚠ ${esc(t.name)}</b><span>${status}</span></div>
+          <div class="cr-sides"><span style="color:${col(A)}">${A} ${t.forces[A]}div</span><span class="dim">🕊 ${Math.round(t.peace)}%</span><span style="color:${col(B)}">${t.forces[B]}div ${B}</span></div>
+          ${t.status === 'active' ? `<div class="tug small-tug"><span class="mid"></span>${bar}</div>` : ''}
+          ${t.mine ? `<div class="small" style="color:var(--green)">your divisions here: ${t.mine}</div>` : ''}
+        </div>`;
+      }).join('');
+    el.querySelectorAll('[data-cf]').forEach((b) => b.onclick = () => { crisesFilter = b.dataset.cf; renderCrises(); });
+    el.querySelectorAll('[data-cr]').forEach((d) => d.onclick = () => {
+      const t = S.trigsits.find((x) => x.id === d.dataset.cr);
+      select({ kind: 'trigsit', id: t.id }); flyTo(t.lonlat);
+    });
   }
 
   function costStr(c) { return Object.entries(c).map(([k, v]) => `${v} ${k.toUpperCase()}`).join(' + '); }

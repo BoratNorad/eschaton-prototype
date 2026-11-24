@@ -28,7 +28,8 @@
       title: 'WHEN THE GAME ENDS',
       target: '#map',
       text: `The gold <b>⚠ markers</b> on the map are <b>TRIGSITs</b>, live crises like Berlin and Korea. The number in [brackets] is how many turns until it freezes.<br><br>
-        The game ends when <b>every TRIGSIT is resolved</b>: by negotiation, by one side winning militarily, or by its timer running out.`,
+        The game ends when <b>every TRIGSIT is resolved</b>: by negotiation, by one side winning militarily, or by its timer running out.<br><br>
+        There are <b>21</b>, one for every pair of coalitions, and you're in <b>6</b> of them. The <b>CRISES</b> tab lists them all.`,
     },
     {
       title: 'THE ESCALATION METER',

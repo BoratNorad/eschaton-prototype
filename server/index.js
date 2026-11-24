@@ -7,6 +7,7 @@ const CONFIG = require('./config');
 const Game = require('./game');
 const fs = require('fs');
 const { simulate } = require('./simulate');
+const TERR = require('./territories');
 
 const app = express();
 const server = http.createServer(app);
@@ -22,6 +23,7 @@ app.get('/vendor/d3.min.js', (_, res) => res.sendFile(nm('d3/dist/d3.min.js')));
 app.get('/vendor/topojson-client.min.js', (_, res) => res.sendFile(nm('topojson-client/dist/topojson-client.min.js')));
 app.get('/vendor/countries-110m.json', (_, res) => res.sendFile(nm('world-atlas/countries-110m.json')));
 app.get('/config.js', (_, res) => { noCache(res); res.type('application/javascript').send(`window.CONFIG = ${JSON.stringify(CONFIG)};\nwindow.BUILD = ${JSON.stringify(BUILD)};`); });
+app.get('/api/territories', (_, res) => res.json(Object.fromEntries(Object.entries(TERR).map(([id, row]) => [id, row[0]]))));
 app.get('/health', (_, res) => res.json({ ok: true, rooms: rooms.size, replays: replays.size }));
 
 // ---------------- replays (memory + best-effort disk; Render's free disk is wiped on restart)

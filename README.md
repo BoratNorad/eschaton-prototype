@@ -12,10 +12,13 @@ Turn-based Cold War thermonuclear strategy for the browser. 7 coalitions, 8 live
     node test/dom.js            # (server running) headless UI smoke test
     node test/tutorial.js       # (server running) walks every tutorial step
     node test/replay.js out.png # (server running) simulates an AI war, tests replay viewer, renders share card
+    node test/trigsits.js       # (server running) dossier page: markers, matrix, filters
+    node test/restart.js        # spawns its own server, restarts it mid-tutorial, checks recovery
 
 ## Modes
 - **Multiplayer**: create a room, share the code, AI fills empty slots.
 - **Tutorial**: solo training game with a step-by-step coach.
+- **TRIGSIT Dossiers** (`/trigsits.html`): browse all 21 crises (one per pair of coalitions) on a map and a 7×7 pair matrix, with briefings. In-game, the CRISES tab lists them and flies the map to each.
 - **AI War**: 21 fictional heads of state (3 per coalition), each with an archetype and traits
   (`server/personalities.js`), fight a full war instantly. Opens a replay viewer with an
   after-action report, downloadable share card (PNG) and copyable group-chat summary.

@@ -13,6 +13,8 @@ setTimeout(() => fail('timeout'), 60000);
       w.SVGElement.prototype.getTotalLength = () => 100;
       w.SVGElement.prototype.getPointAtLength = () => ({ x: 0, y: 0 });
       w.Element.prototype.getBoundingClientRect = () => ({ width: 1200, height: 700, left: 0, top: 0 });
+      // jsdom lacks SVG viewBox (real browsers have it); d3-zoom reads it when flying the map
+      Object.defineProperty(w.SVGSVGElement.prototype, 'viewBox', { get: () => ({ baseVal: { x: 0, y: 0, width: 1200, height: 700 } }) });
       w.localStorage.clear();
     } });
   const w = dom.window, d = w.document, $ = (s) => d.querySelector(s);

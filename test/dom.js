@@ -15,6 +15,8 @@ setTimeout(() => fail('timeout'), 40000);
       w.SVGElement.prototype.getTotalLength = () => 100;
       w.SVGElement.prototype.getPointAtLength = () => ({ x: 0, y: 0 });
       w.Element.prototype.getBoundingClientRect = () => ({ width: 1200, height: 700, left: 0, top: 0 });
+      // jsdom lacks SVG viewBox (real browsers have it); d3-zoom reads it when flying the map
+      Object.defineProperty(w.SVGSVGElement.prototype, 'viewBox', { get: () => ({ baseVal: { x: 0, y: 0, width: 1200, height: 700 } }) });
       w.confirm = () => true;
     } });
   const w = dom.window, $ = (s) => w.document.querySelector(s);
@@ -44,6 +46,12 @@ setTimeout(() => fail('timeout'), 40000);
   $('#comBtn').click();
   // tabs
   for (const t of ['build', 'intel', 'diplo', 'comms', 'target']) w.document.querySelector(`[data-tab="${t}"]`).click();
+  w.document.querySelector('[data-tab="crises"]').click();
+  const crises = w.document.querySelectorAll('#tab-crises .crisis').length;
+  w.document.querySelector('[data-cf="all"]').click();
+  console.log('crises tab: mine', crises, '| all', w.document.querySelectorAll('#tab-crises .crisis').length, '| labels at zoom 1:', [...w.document.querySelectorAll('g.trig text')].filter((t) => t.textContent.startsWith('⚠')).length, 'full of 21');
+  w.document.querySelector('#tab-crises .crisis').click();
+  console.log('crisis click -> target:', $('#tab-target h3')?.textContent);
   w.document.querySelector('[data-tab="build"]').click();
   w.document.querySelector('[data-inc="conv"]').click();
   w.document.querySelector('[data-tab="intel"]').click();

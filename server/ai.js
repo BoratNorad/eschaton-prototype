@@ -18,7 +18,8 @@ function orders(game, p) {
   const my = p.coalition;
   const caution = A.escalationCaution + (T.caution - 0.5) * 5; // 3.5 .. 8.5
   const holdFire = game.tutorial && game.turn <= CONFIG.tutorial.aiHoldFireTurns; // training: no unprovoked nukes early
-  const myTrig = game.trigsits.filter((t) => t.status === 'active' && t.sides.includes(my));
+  // shuffled so the AI spreads attention across its crises instead of always favoring the first ones
+  const myTrig = game.trigsits.filter((t) => t.status === 'active' && t.sides.includes(my)).sort(() => rnd() - 0.5);
   const budget = game._aiNukes || (game._aiNukes = {});
   const add = (a) => {
     if (actions.length >= CONFIG.actionsPerTurn) return;

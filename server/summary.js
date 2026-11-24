@@ -66,7 +66,9 @@ function build(game, replay) {
   for (const g of strikes.filter((s) => s.glass).slice(0, 2)) M(g.turn, 6, '🔥', `${(g.target || '').toUpperCase()} IS GLASS`, `${who(g.by)} (${g.c}) wipes ${g.target} off the map.`);
   for (const b of betrayals.slice(0, 3)) M(b.turn, 8, '🗡', 'BETRAYAL', `${who(b.by)} (${b.c}) tears up the non-aggression pact with ${b.victim}.`);
   if (signs[0]) M(signs[0].turn, 4, '🤝', 'FIRST PACT', `${signs[0].a} and ${signs[0].b} sign a non-aggression pact.`);
-  for (const t of trig) {
+  // 21 crises would swamp the timeline: keep the 5 most dramatic (force > peace > frozen, earliest first)
+  const howRank = { military: 0, peace: 1, timer: 2 };
+  for (const t of trig.slice().sort((x, y) => howRank[x.how] - howRank[y.how] || x.turn - y.turn).slice(0, 5)) {
     if (t.how === 'peace') M(t.turn, 5, '🕊', t.name, `Settled at the table by ${t.negotiators.length} negotiator${t.negotiators.length === 1 ? '' : 's'}.`);
     else if (t.how === 'military') M(t.turn, 5, '⚔', t.name, `${t.winner} wins by force against ${t.sides.find((s) => s !== t.winner)}.`);
     else M(t.turn, 3, '⌛', t.name, 'The clock runs out. A frozen conflict.');

@@ -80,6 +80,7 @@
     const zoom = d3.zoom().scaleExtent([1, 8]).translateExtent([[0, 0], [width, height]]).on('zoom', (ev) => {
       gRoot.attr('transform', ev.transform); zoomK = ev.transform.k;
       gTrig.selectAll('.trig').attr('transform', (d) => `translate(${projection(d.lonlat)}) scale(${1 / Math.sqrt(zoomK)})`);
+      if (R) renderMap(R.frames[frame]);
     });
     svg.call(zoom).on('dblclick.zoom', null);
   }
@@ -98,7 +99,12 @@
       return e;
     });
     g.attr('class', (d) => `trig ${d.s}`).attr('transform', (d) => `translate(${projection(d.lonlat)}) scale(${1 / Math.sqrt(zoomK)})`);
-    g.select('text').text((d) => d.s === 'active' ? `⚠ ${d.name} [${d.left}]` : `${d.name} ${d.how === 'peace' ? '🕊' : d.how === 'military' ? '⚔ ' + d.win : '⌛'}`);
+    g.select('text').text((d) => {
+      const full = zoomK >= 2.2; // 21 crises: names only when zoomed in
+      if (d.s === 'active') return full ? `⚠ ${d.name} [${d.left}]` : `[${d.left}]`;
+      const icon = d.how === 'peace' ? '🕊' : d.how === 'military' ? '⚔' : '⌛';
+      return full ? `${d.name} ${icon}${d.how === 'military' ? ' ' + d.win : ''}` : icon;
+    });
   }
 
   function playAnims(anims, budgetMs) {

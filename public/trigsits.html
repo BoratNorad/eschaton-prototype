@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TRIGSIT Dossiers</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="dossier-page">
+  <section id="td" class="screen">
+    <header id="topbar">
+      <a href="/" class="logo small-logo" style="text-decoration:none">ESCHATON</a>
+      <div class="tb-block"><div class="dim">ARCHIVE</div><div>TRIGSIT DOSSIERS</div></div>
+      <div class="dim small td-sub">21 triggering situations · one for every pair of coalitions · each coalition is a party to 6</div>
+      <a href="/" class="btn small ghost">◀ MENU</a>
+    </header>
+    <div id="tdMain">
+      <div id="mapWrap">
+        <svg id="map"></svg>
+        <div id="tooltip" class="hidden"></div>
+        <div id="mapHint" class="dim small">Click a ⚠ marker or a matrix cell · scroll to zoom</div>
+      </div>
+      <aside id="tdSide">
+        <div class="td-filters" id="tdFilters"></div>
+        <div id="tdMatrix"></div>
+        <div id="tdCard"></div>
+        <h4 class="td-h">ALL TRIGSITS</h4>
+        <div id="tdList"></div>
+      </aside>
+    </div>
+  </section>
+  <div id="toast" class="hidden"></div>
+  <script src="/vendor/d3.min.js"></script>
+  <script src="/vendor/topojson-client.min.js"></script>
+  <script src="/config.js"></script>
+  <script src="/trigsits.js"></script>
+</body>
+</html>
