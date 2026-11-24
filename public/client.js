@@ -40,6 +40,14 @@
   $('#createBtn').onclick = () => socket.emit('create', { name: myName() });
   const startTutorial = () => { $('#howto').classList.add('hidden'); ls.set('esch:howto', '1'); socket.emit('tutorial', { name: myName() }); };
   $$('[data-tutorial]').forEach((b) => b.onclick = startTutorial);
+  $('#simBtn').onclick = async () => {
+    const b = $('#simBtn'); b.disabled = true; b.textContent = 'SIMULATING 21 HEADS OF STATE…';
+    try {
+      const r = await fetch('/api/simulate', { method: 'POST' }); const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      location.href = '/replay.html?id=' + j.id;
+    } catch (e) { b.disabled = false; b.textContent = '☢ SIMULATE AI WAR'; $('#landingErr').textContent = e.message || 'Simulation failed'; }
+  };
   $('#joinBtn').onclick = () => {
     const code = $('#codeInput').value.trim().toUpperCase();
     if (!code) return ($('#landingErr').textContent = 'Enter a room code.');
@@ -556,7 +564,7 @@
     const el = $('#chatLog');
     el.innerHTML = chatMsgs.map((m) => {
       const tag = m.scope === 'pm' ? (m.from === myId ? `[PM → ${esc(m.toName)}]` : '[PM]') : m.scope === 'coalition' ? `[${m.coalition}]` : '';
-      return `<div class="msg ${m.scope}" style="--c:${col(m.coalition)}"><span class="tag">${tag}</span> <span class="who">${esc(m.fromName)}</span>: ${esc(m.text)}</div>`;
+      return `<div class="msg ${m.scope}${m.ai ? ' ai' : ''}" style="--c:${col(m.coalition)}"><span class="tag">${m.ai ? '[LEADER]' : tag}</span> <span class="who">${esc(m.fromName)}</span>: ${esc(m.text)}</div>`;
     }).join('');
     el.scrollTop = el.scrollHeight;
   }
@@ -581,7 +589,7 @@
       <p class="dim">${esc(S.endReason)} · turn ${S.turn}</p>
       <h3 style="color:${col(S.winner)};text-shadow:0 0 14px ${col(S.winner)}">${S.winner} PREVAILS</h3>
       ${rows.map((r, i) => `<div class="kv"><span style="color:${col(r.c)}">${i + 1}. ${r.c}</span><span>${r.ratio.toFixed(2)} (dealt ${r.inflicted} / took ${r.suffered})</span></div>`).join('')}
-      <div class="row" style="margin-top:16px"><button class="btn ghost" id="goClose">VIEW MAP</button><button class="btn primary" id="goNew">NEW GAME</button></div>`;
+      <div class="row" style="margin-top:16px"><button class="btn ghost" id="goClose">VIEW MAP</button>${S.replayId ? `<a class="btn" href="/replay.html?id=${S.replayId}" target="_blank">▶ REPLAY &amp; SHARE</a>` : ''}<button class="btn primary" id="goNew">NEW GAME</button></div>`;
     $('#gameover').classList.remove('hidden');
     $('#goClose').onclick = () => $('#gameover').classList.add('hidden');
     $('#goNew').onclick = () => { location.href = '/'; };

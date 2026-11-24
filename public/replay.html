@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESCHATON Replay</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="replay-page">
+  <section id="rp" class="screen">
+    <header id="topbar">
+      <a href="/" class="logo small-logo" style="text-decoration:none">ESCHATON</a>
+      <div class="tb-block"><div class="dim" id="rpMode">REPLAY</div><div id="rpTurn">TURN 0</div></div>
+      <div id="rpHeadline" class="rp-headline">LOADING…</div>
+      <div id="escBox">
+        <div class="esc-head"><span>GLOBAL ESCALATION</span><span id="escLabel">DEFCON 5</span></div>
+        <div id="escMeter"></div>
+      </div>
+      <button id="aarBtn" class="btn primary small">AFTER-ACTION REPORT</button>
+    </header>
+
+    <div id="main">
+      <div id="mapWrap">
+        <svg id="map"></svg>
+        <div id="scoreboard"></div>
+        <div id="tooltip" class="hidden"></div>
+        <div id="rpBanner" class="hidden"></div>
+      </div>
+      <aside id="side">
+        <nav id="tabs">
+          <button data-tab="feed" class="active">DISPATCHES</button>
+          <button data-tab="leaders">LEADERS</button>
+        </nav>
+        <div id="tabBody">
+          <div class="tab" id="tab-feed"></div>
+          <div class="tab hidden" id="tab-leaders"></div>
+        </div>
+      </aside>
+    </div>
+
+    <footer id="rpControls">
+      <button class="btn small" id="rpFirst" title="First turn">⏮</button>
+      <button class="btn small" id="rpPrev" title="Previous turn">◀</button>
+      <button class="btn small primary" id="rpPlay">▶ PLAY</button>
+      <button class="btn small" id="rpNext" title="Next turn">▶▶</button>
+      <button class="btn small" id="rpLast" title="Final turn">⏭</button>
+      <input type="range" id="rpSlider" min="0" max="0" value="0" />
+      <label class="dim small">SPEED <select id="rpSpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+    </footer>
+  </section>
+
+  <div id="aar" class="overlay hidden"><div class="dossier" id="aarBody"></div></div>
+  <div id="toast" class="hidden"></div>
+  <canvas id="card" width="1080" height="1350" class="hidden"></canvas>
+
+  <script src="/vendor/d3.min.js"></script>
+  <script src="/vendor/topojson-client.min.js"></script>
+  <script src="/config.js"></script>
+  <script src="/replay.js"></script>
+</body>
+</html>

@@ -10,11 +10,24 @@ Turn-based Cold War thermonuclear strategy for the browser. 7 coalitions, 8 live
     npm run sim                 # 50 headless all-AI games, prints balance stats
     node test/socket.js         # (server running) 2-client lobby/chat/treaty/turn test
     node test/dom.js            # (server running) headless UI smoke test
+    node test/tutorial.js       # (server running) walks every tutorial step
+    node test/replay.js out.png # (server running) simulates an AI war, tests replay viewer, renders share card
+
+## Modes
+- **Multiplayer**: create a room, share the code, AI fills empty slots.
+- **Tutorial**: solo training game with a step-by-step coach.
+- **AI War**: 21 fictional heads of state (3 per coalition), each with an archetype and traits
+  (`server/personalities.js`), fight a full war instantly. Opens a replay viewer with an
+  after-action report, downloadable share card (PNG) and copyable group-chat summary.
+  Every finished multiplayer game also gets a replay link.
 
 ## Files
 - `server/config.js`: **every balance number**: costs, damage, income, escalation, abilities, TRIGSITs
 - `server/territories.js`: country → coalition and per-country yields
 - `server/game.js`: rules engine (simultaneous resolution)
-- `server/ai.js`: rule-based AI
+- `server/ai.js`: rule-based AI, steered by personality traits
+- `server/personalities.js`: 24 fictional leaders, 8 archetypes, their lines
+- `server/summary.js`: after-action report (headline, moments, awards, quotes)
+- `server/simulate.js`: instant all-AI war
 - `server/index.js`: Express + Socket.io (rooms, lobby, chat, timers)
 - `public/`: client (d3-geo map, no build step)

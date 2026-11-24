@@ -5,6 +5,8 @@ const express = require('express');
 const { Server } = require('socket.io');
 const CONFIG = require('./config');
 const Game = require('./game');
+const fs = require('fs');
+const { simulate } = require('./simulate');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,7 +19,38 @@ app.get('/vendor/d3.min.js', (_, res) => res.sendFile(nm('d3/dist/d3.min.js')));
 app.get('/vendor/topojson-client.min.js', (_, res) => res.sendFile(nm('topojson-client/dist/topojson-client.min.js')));
 app.get('/vendor/countries-110m.json', (_, res) => res.sendFile(nm('world-atlas/countries-110m.json')));
 app.get('/config.js', (_, res) => res.type('application/javascript').send(`window.CONFIG = ${JSON.stringify(CONFIG)};`));
-app.get('/health', (_, res) => res.json({ ok: true, rooms: rooms.size }));
+app.get('/health', (_, res) => res.json({ ok: true, rooms: rooms.size, replays: replays.size }));
+
+// ---------------- replays (memory + best-effort disk; Render's free disk is wiped on restart)
+const replays = new Map();
+const REPLAY_DIR = process.env.REPLAY_DIR || path.join(__dirname, '..', 'data', 'replays');
+try { fs.mkdirSync(REPLAY_DIR, { recursive: true }); } catch {}
+const replayId = () => Math.random().toString(36).slice(2, 7) + Date.now().toString(36).slice(-3);
+function saveReplay(r) {
+  replays.set(r.id, r);
+  while (replays.size > 100) replays.delete(replays.keys().next().value);
+  fs.writeFile(path.join(REPLAY_DIR, r.id + '.json'), JSON.stringify(r), () => {});
+}
+function loadReplay(id) {
+  if (!/^[a-z0-9]{4,16}$/.test(id)) return null;
+  if (replays.has(id)) return replays.get(id);
+  try { const r = JSON.parse(fs.readFileSync(path.join(REPLAY_DIR, id + '.json'), 'utf8')); replays.set(id, r); return r; } catch { return null; }
+}
+const simLimiter = new Map();
+app.post('/api/simulate', (req, res) => {
+  const ip = req.ip || 'x';
+  if (Date.now() - (simLimiter.get(ip) || 0) < 2000) return res.status(429).json({ error: 'Slow down, Commander.' });
+  simLimiter.set(ip, Date.now());
+  if (simLimiter.size > 5000) simLimiter.clear();
+  const r = simulate(replayId());
+  saveReplay(r);
+  res.json({ id: r.id, headline: r.summary.headline });
+});
+app.get('/api/replay/:id', (req, res) => {
+  const r = loadReplay(req.params.id);
+  if (!r) return res.status(404).json({ error: 'Replay not found (server may have restarted).' });
+  res.json(r);
+});
 
 const rooms = new Map(); // code -> { game, timer, reportUntil, emptySince }
 
@@ -31,6 +64,15 @@ const clean = (s, n) => String(s || '').replace(/[<>]/g, '').trim().slice(0, n);
 
 function broadcast(room) {
   const g = room.game;
+  if (g.phase === 'over' && !g.replayId && g.frames.length) {
+    try { const r = g.toReplay(replayId()); g.replayId = r.id; saveReplay(r); } catch (e) { console.error('replay error', e); }
+  }
+  // AI leaders speak in public chat
+  for (const q of g.chatter.splice(0)) {
+    const m = { from: q.pid, fromName: q.name, coalition: q.coalition, text: q.text, t: Date.now(), scope: 'all', ai: true };
+    g.chat.push(m);
+    for (const p of g.players.values()) if (p.socketId) io.to(p.socketId).emit('chat', m);
+  }
   for (const p of g.players.values()) {
     if (!p.socketId) continue;
     if (g.phase === 'lobby') io.to(p.socketId).emit('lobby', { ...g.lobbyView(), you: p.id });

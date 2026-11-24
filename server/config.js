@@ -98,10 +98,13 @@ const CONFIG = {
   ai: {
     firstStrikeChance: 0.015,
     retaliateChance: 0.25,
+    retaliateHeadroom: 1.2,          // AI keeps retaliating until escalation reaches its caution level + this
     trigsitNukeChance: 0.08,         // when outnumbered at a TRIGSIT
     negotiateChance: 0.35,
     spyChance: 0.2,
-    treatyProposeChance: 0.06,
+    treatyProposeChance: 0.15,
+    nukesPerCoalitionPerTurn: 1,     // AI coalition launches at most this many strikes per turn
+    betrayChance: 0.35,              // per active pact per turn, scaled by (0.4 - loyalty)
     treatyAcceptChance: 0.55,
     escalationCaution: 6,            // AI avoids optional nukes at/above this level
   },

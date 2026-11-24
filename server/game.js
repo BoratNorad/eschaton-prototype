@@ -3,6 +3,7 @@ const CONFIG = require('./config');
 const TERR = require('./territories');
 const atlas = require('world-atlas/countries-110m.json');
 const AI = require('./ai');
+const Personas = require('./personalities');
 
 const COALS = Object.keys(CONFIG.coalitions);
 const UNIT_KEYS = Object.keys(CONFIG.units);
@@ -44,6 +45,12 @@ class Game {
     this.winner = null;
     this.endReason = null;
     this.tutorial = false;
+    this.mode = 'human';      // 'human' | 'ai' (spectated simulation)
+    this.chatter = [];        // AI leader lines waiting to be broadcast as chat
+    this.chronicle = [];      // structured history for the after-action report
+    this.frames = [];         // replay snapshots, one per turn
+    this._quotes = [];
+    this.replayId = null;
   }
 
   // ------------------------------------------------------------ lobby
@@ -62,6 +69,7 @@ class Game {
       id, name: String(name || 'Commander').slice(0, 16), isAI, coalition: null, connected: !isAI,
       res: { ind: 0, ura: 0, inf: 0 }, arsenal: Object.fromEntries(UNIT_KEYS.map((k) => [k, 0])),
       intel: {}, orders: null, submitted: false, private: [],
+      stats: { dealt: 0, nukes: 0, betrayals: 0, negotiated: 0, spyOps: 0, spyCaught: 0 },
     };
   }
   humans() { return [...this.players.values()].filter((p) => !p.isAI); }
@@ -81,7 +89,8 @@ class Game {
   }
 
   // ------------------------------------------------------------ start
-  start() {
+  start(opts = {}) {
+    const fillTo = opts.fillTo || CONFIG.minSlotsPerCoalition;
     // humans without a coalition go to the least-populated one
     for (const p of this.humans()) {
       if (!p.coalition) {
@@ -91,10 +100,14 @@ class Game {
       }
     }
     // AI fills slots
-    let ai = 0;
+    const need = COALS.reduce((s, c) => s + Math.max(0, fillTo - this.coalitionMembers(c).length), 0);
+    const personas = Personas.draw(need);
     for (const c of COALS) {
-      while (this.coalitionMembers(c).length < CONFIG.minSlotsPerCoalition) {
-        const p = this._makePlayer(newId('a'), `${AI_NAMES[ai++ % AI_NAMES.length]}`, true);
+      while (this.coalitionMembers(c).length < fillTo) {
+        const persona = personas.shift();
+        const p = this._makePlayer(newId('a'), 'AI', true);
+        p.name = persona.name;
+        p.persona = persona;
         p.coalition = c;
         this.players.set(p.id, p);
       }
@@ -125,6 +138,8 @@ class Game {
     }));
     this.turn = 1;
     this.pushLog(`ESCHATON INITIATED. ${this.players.size} commanders across ${COALS.length} coalitions. ${this.trigsits.length} TRIGSITs active.`, 'sys');
+    for (const p of shuffle([...this.players.values()].filter((x) => x.persona)).slice(0, 3)) this.say(p, 'open');
+    this.frames.push(this.snapshot([], []));
     this.beginOrders();
   }
 
@@ -185,8 +200,9 @@ class Game {
   }
   priv(p, text, cls = 'intel') { p.private.push({ turn: this.turn, text, cls }); if (p.private.length > 60) p.private.shift(); }
   ratio(c) { const s = this.scores[c]; return s.inflicted / Math.max(s.suffered, CONFIG.ratioFloor); }
-  recordDamage(attC, defC, amount) {
+  recordDamage(attC, defC, amount, attP) {
     if (amount <= 0) return;
+    if (attP) attP.stats.dealt += amount;
     this.scores[attC].inflicted += amount;
     this.scores[defC].suffered += amount;
   }
@@ -208,6 +224,7 @@ class Game {
     const t = this.treaties.find((x) => x.id === tid);
     if (!p || !t || t.status !== 'proposed' || t.b !== p.coalition) return null;
     t.status = accept ? 'active' : 'rejected';
+    if (accept) { this.chronicle.push({ t: 'sign', turn: this.turn, a: t.a, b: t.b, by: p.id }); this.say(p, 'sign', 0.6); }
     this.pushLog(accept ? `PACT SIGNED: ${t.a} ⟷ ${t.b} non-aggression (accepted by ${p.name}).`
       : `${p.name} (${t.b}) REJECTS the pact offered by ${t.a}.`, 'treaty');
     return t;
@@ -219,6 +236,9 @@ class Game {
     t.status = 'broken';
     t.brokenBy = p.coalition;
     const other = t.a === p.coalition ? t.b : t.a;
+    p.stats.betrayals++;
+    this.chronicle.push({ t: 'betray', turn: this.turn, by: p.id, c: p.coalition, victim: other });
+    this.say(p, 'betray');
     p.res.inf = Math.max(0, p.res.inf - CONFIG.treaty.breakInfPenalty);
     this.escalation = Math.min(CONFIG.escalation.max, this.escalation + CONFIG.escalation.treatyBreak);
     this.pushLog(`⚠ TREATY BROKEN: ${p.name} (${p.coalition}) tears up the pact with ${other}${reason ? ' — ' + reason : ''}. Escalation +${CONFIG.escalation.treatyBreak}.`, 'alert');
@@ -230,6 +250,7 @@ class Game {
     this._events = [];
     this._anims = [];
     this._nukesThisTurn = 0;
+    this._saidThisTurn = 0;
     for (const p of this.players.values()) p._spyUsed = 0, p._dlvUsed = 0;
     this.pushLog(`── TURN ${this.turn} RESOLUTION ──`, 'sys');
 
@@ -261,6 +282,7 @@ class Game {
     }
 
     const report = { turn: this.turn, events: this._events, anims: this._anims };
+    this.frames.push(this.snapshot(this._events, this._anims));
     this.lastReport = report;
     this._events = null;
     return report;
@@ -289,6 +311,8 @@ class Game {
       CONFIG.spy.minSuccess, 0.95);
     if (rnd() > chance) {
       p.arsenal.spies--;
+      p.stats.spyCaught++;
+      this.chronicle.push({ t: 'spycaught', turn: this.turn, by: p.id, c: p.coalition, target });
       this.pushLog(`🕵 SPY CAPTURED: ${target} counter-intelligence catches an agent of ${p.name} (${p.coalition}).`, 'intel');
       return;
     }
@@ -301,6 +325,7 @@ class Game {
       for (const k of UNIT_KEYS) snap[k] = Math.max(0, Math.round(snap[k] * m * (0.85 + rnd() * 0.3)));
     }
     p.intel[target] = { turn: this.turn, arsenal: snap };
+    p.stats.spyOps++;
     this.priv(p, `INTEL ON ${target}: STR ${snap.strategic} · TAC ${snap.tactical} · DLV ${snap.delivery} · ABM ${snap.defense} · CONV ${snap.conv} · SPY ${snap.spies}`);
   }
 
@@ -314,6 +339,8 @@ class Game {
     const gain = amt * CONFIG.trigsit.peacePerInfluence * mult;
     tr.peace = Math.min(CONFIG.trigsit.peaceThreshold, tr.peace + gain);
     tr.negotiators[p.id] = (tr.negotiators[p.id] || 0) + amt;
+    p.stats.negotiated += amt;
+    this.say(p, 'negotiate', 0.2);
     this.pushLog(`🕊 ${p.name} (${p.coalition}) invests ${amt} influence in talks at ${tr.name}. Peace ${Math.round(tr.peace)}%.`, 'calm');
   }
 
@@ -375,6 +402,11 @@ class Game {
 
     p.res.inf -= infCost;
     p.arsenal[kind]--;
+    p.stats.nukes++;
+    this._lastStriker = p;
+    const firstNuke = !this.chronicle.some((e) => e.t === 'strike');
+    const chron = { t: 'strike', turn: this.turn, by: p.id, c: p.coalition, defC, kind, ret: isRetaliation, first: firstNuke, dmg: 0, intercepted: false };
+    this.chronicle.push(chron);
     if (kind === 'strategic') p._dlvUsed++;
     this._nukesThisTurn++;
     this.escalation = Math.min(CONFIG.escalation.max, this.escalation + (isRetaliation ? CONFIG.strike.retaliationEscalation : S.escalation));
@@ -390,24 +422,30 @@ class Game {
     const tag = isRetaliation ? '↩ RETALIATION' : kind === 'strategic' ? '☢ STRATEGIC STRIKE' : '☢ TACTICAL STRIKE';
     if (ter && rnd() < icp) {
       anim.intercepted = true;
+      chron.intercepted = true;
+      chron.target = targetName;
       this.pushLog(`${tag}: ${p.name} (${p.coalition}) → ${targetName} [${defC}] — INTERCEPTED by missile defense.`, 'nuke');
     } else {
       const mult = 1 + this.escalation * CONFIG.strike.escalationDamageMult;
       if (ter) {
         const dmg = Math.min(ter.hp, Math.round(S.damage * mult));
         ter.hp -= dmg;
-        this.recordDamage(p.coalition, defC, dmg);
+        this.recordDamage(p.coalition, defC, dmg, p);
+        Object.assign(chron, { dmg, target: targetName, glass: ter.hp <= 0 });
         this.pushLog(`${tag}: ${p.name} (${p.coalition}) → ${targetName} [${defC}] — ${dmg} damage. ${ter.hp <= 0 ? targetName.toUpperCase() + ' IS GLASS.' : ''}`, 'nuke');
       } else {
         const enemy = this.sideForces(tr, defC);
         const kill = Math.min(enemy, Math.max(S.trigsitKillMin, Math.ceil(enemy * S.trigsitKillPct)));
         const k = this.killForces(tr, defC, kill);
         const dmg = Math.round(k * CONFIG.trigsit.damagePerCasualty * 2 * mult);
-        this.recordDamage(p.coalition, defC, dmg);
+        this.recordDamage(p.coalition, defC, dmg, p);
+        Object.assign(chron, { dmg, target: `${defC} forces at ${targetName}` });
         this.pushLog(`${tag}: ${p.name} (${p.coalition}) nukes ${defC} forces at ${targetName} — ${k} divisions vaporized (${dmg} damage).`, 'nuke');
       }
     }
 
+    this.say(p, isRetaliation ? 'retaliate' : 'strike', isRetaliation ? 0.5 : 0.8);
+    if (!chron.intercepted && chron.dmg >= 30) { const v = pick(this.coalitionMembers(defC).filter((x) => x.persona).concat([null])); if (v) this.say(v, 'hit', 0.4); }
     // automatic retaliation (one level deep — no infinite chains)
     if (!isRetaliation) {
       const dab = CONFIG.coalitions[defC].ability;
@@ -430,6 +468,7 @@ class Game {
 
   eschaton() {
     this.escalation = CONFIG.escalation.max;
+    this.chronicle.push({ t: 'eschaton', turn: this.turn, by: this._lastStriker?.id, c: this._lastStriker?.coalition });
     this.pushLog('████ ESCHATON ████ Escalation has reached maximum. Every silo opens. Full exchange.', 'alert');
     for (const p of shuffle([...this.players.values()])) {
       const enemies = Object.values(this.territories).filter((t) => t.coalition !== p.coalition && t.hp > 0 && !this.activeTreaty(p.coalition, t.coalition));
@@ -445,7 +484,8 @@ class Game {
         if (intercepted) continue;
         const dmg = Math.min(ter.hp, Math.round(CONFIG.strike[kind].damage * 2));
         ter.hp -= dmg;
-        this.recordDamage(p.coalition, defC, dmg);
+        this.recordDamage(p.coalition, defC, dmg, p);
+        p.stats.nukes++;
         if (ter.hp <= 0) enemies.splice(enemies.indexOf(ter), 1);
       }
     }
@@ -482,6 +522,8 @@ class Game {
     tr.status = 'resolved';
     tr.how = how;
     tr.winner = winner;
+    this.chronicle.push({ t: 'trigsit', turn: this.turn, id: tr.id, name: tr.name, how, winner, sides: tr.sides,
+      negotiators: Object.keys(tr.negotiators) });
     // return surviving forces
     for (const side of tr.sides) for (const [pid, n] of Object.entries(tr.forces[side])) {
       const p = this.players.get(pid);
@@ -557,7 +599,58 @@ class Game {
     this.endReason = reason;
     const ranked = COALS.slice().sort((a, b) => this.ratio(b) - this.ratio(a));
     this.winner = ranked[0];
+    const speaker = (c) => this.coalitionMembers(c).filter((x) => x.persona).sort((a, b) => b.stats.dealt - a.stats.dealt)[0];
+    const w = speaker(ranked[0]), l = speaker(ranked[ranked.length - 1]);
+    if (w) this.say(w, 'win', 1, true);
+    if (l) this.say(l, 'lose', 1, true);
     this.pushLog(`GAME OVER (${reason}). ${this.winner} prevails with INDDIR/SUFDDIR ratio ${this.ratio(this.winner).toFixed(2)}.`, 'sys');
+  }
+
+  // ------------------------------------------------------------ personalities & replay
+  say(p, event, chance = 1, force = false) {
+    if (!p?.persona) return;
+    if (!force && (rnd() > chance || this._saidThisTurn >= 6)) return;
+    const text = Personas.line(p.persona, event);
+    if (!text) return;
+    this._saidThisTurn = (this._saidThisTurn || 0) + 1;
+    const q = { turn: this.turn, pid: p.id, name: `${p.persona.title} ${p.name}`, coalition: p.coalition, archetype: p.persona.archetype, event, text };
+    this.chatter.push(q);
+    this._quotes.push(q);
+    this.chronicle.push({ t: 'quote', ...q });
+  }
+
+  snapshot(events, anims) {
+    if (!this._terrIds) this._terrIds = Object.keys(this.territories);
+    return {
+      turn: this.turn,
+      esc: round1(this.escalation),
+      hp: this._terrIds.map((id) => this.territories[id].hp),
+      trig: this.trigsits.map((t) => ({ id: t.id, s: t.status, ctl: Math.round(t.control), peace: Math.round(t.peace), left: t.turnsLeft, how: t.how || null, win: t.winner || null,
+        f: t.sides.map((s) => this.sideForces(t, s)) })),
+      scores: COALS.map((c) => [this.scores[c].inflicted, this.scores[c].suffered]),
+      events: events.filter((e) => !e.text.startsWith('──')).map((e) => [e.text, e.cls]),
+      anims: anims.slice(0, 150),
+      quotes: this._quotes.splice(0),
+    };
+  }
+
+  toReplay(id) {
+    const Summary = require('./summary');
+    const replay = {
+      id, v: 1, created: Date.now(), mode: this.mode,
+      coalitions: COALS,
+      terr: this._terrIds.map((tid) => { const t = this.territories[tid]; return [tid, t.coalition, t.maxHp, t.name]; }),
+      trigsits: this.trigsits.map((t) => ({ id: t.id, name: t.name, lonlat: t.lonlat, sides: t.sides })),
+      players: [...this.players.values()].map((p) => ({
+        id: p.id, name: p.name, coalition: p.coalition, isAI: p.isAI, stats: p.stats,
+        persona: p.persona ? { title: p.persona.title, archetype: p.persona.archetype, motto: p.persona.motto } : null,
+      })),
+      frames: this.frames,
+      final: { winner: this.winner, reason: this.endReason, turn: this.turn,
+        scoreboard: COALS.map((c) => ({ c, ...this.scores[c], ratio: this.ratio(c) })).sort((a, b) => b.ratio - a.ratio) },
+    };
+    replay.summary = Summary.build(this, replay);
+    return replay;
   }
 
   // ------------------------------------------------------------ views
@@ -588,7 +681,7 @@ class Game {
       scoreboard,
       log: this.log.slice(-120),
       lastReport: this.lastReport,
-      winner: this.winner, endReason: this.endReason,
+      winner: this.winner, endReason: this.endReason, replayId: this.replayId,
       strikeCost: { tactical: this.strikeInfCost('tactical'), strategic: this.strikeInfCost('strategic') },
       me: me && {
         id: me.id, name: me.name, coalition: me.coalition, res: mapRound(me.res), arsenal: me.arsenal,
