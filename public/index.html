@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESCHATON</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- ================= LANDING ================= -->
+  <section id="landing" class="screen">
+    <div class="landing-box">
+      <h1 class="logo">ESCHATON<span class="blink">_</span></h1>
+      <p class="tag">EVERY CRISIS. EVERY WARHEAD. ALL AT ONCE.</p>
+      <label>CALLSIGN <input id="nameInput" maxlength="16" placeholder="Commander" /></label>
+      <div class="row">
+        <button id="createBtn" class="btn primary">CREATE GAME</button>
+      </div>
+      <div class="row">
+        <input id="codeInput" maxlength="5" placeholder="ROOM CODE" class="code-input" />
+        <button id="joinBtn" class="btn">JOIN</button>
+      </div>
+      <button class="btn ghost" data-howto>HOW TO PLAY</button>
+      <p id="landingErr" class="err"></p>
+    </div>
+  </section>
+
+  <!-- ================= LOBBY ================= -->
+  <section id="lobby" class="screen hidden">
+    <div class="lobby-box">
+      <div class="lobby-head">
+        <div>
+          <div class="dim">ROOM CODE</div>
+          <div id="lobbyCode" class="big-code">-----</div>
+          <button id="copyLink" class="btn small">COPY INVITE LINK</button>
+        </div>
+        <div class="lobby-ctrl">
+          <label>TURN TIMER <select id="timerSel"></select></label>
+          <button id="startBtn" class="btn primary">LAUNCH GAME</button>
+          <div id="lobbyNote" class="dim small"></div>
+        </div>
+      </div>
+      <p class="dim small">Pick a coalition (up to 3 commanders each). Empty slots are filled by AI at launch. Coalition-mates share territory income and coordinate.</p>
+      <div id="coalGrid" class="coal-grid"></div>
+      <div id="unassigned" class="dim small"></div>
+    </div>
+  </section>
+
+  <!-- ================= GAME ================= -->
+  <section id="game" class="screen hidden">
+    <header id="topbar">
+      <div class="logo small-logo">ESCHATON</div>
+      <div class="tb-block"><div class="dim">ROOM</div><div id="tbCode">-</div></div>
+      <div class="tb-block"><div class="dim">TURN</div><div id="tbTurn">1</div></div>
+      <div class="phases">
+        <div class="phase" data-ph="orders">① ORDERS</div>
+        <div class="phase" data-ph="locked">② LOCKED</div>
+        <div class="phase" data-ph="report">③ RESOLUTION</div>
+      </div>
+      <div class="tb-block timer"><div class="dim">T-MINUS</div><div id="tbTimer">--</div></div>
+      <div id="escBox">
+        <div class="esc-head"><span>GLOBAL ESCALATION</span><span id="escLabel">DEFCON 5</span></div>
+        <div id="escMeter"></div>
+      </div>
+      <div id="meBadge"></div>
+      <button class="btn small ghost" data-howto>?</button>
+    </header>
+
+    <div id="main">
+      <div id="mapWrap">
+        <svg id="map"></svg>
+        <div id="scoreboard"></div>
+        <div id="tooltip" class="hidden"></div>
+        <div id="reportBox" class="hidden"></div>
+        <div id="mapHint" class="dim small">Click a country or ⚠ TRIGSIT · scroll to zoom · drag to pan</div>
+      </div>
+
+      <aside id="side">
+        <div id="resBar"></div>
+        <nav id="tabs">
+          <button data-tab="target" class="active">TARGET</button>
+          <button data-tab="build">BUILD</button>
+          <button data-tab="intel">INTEL</button>
+          <button data-tab="diplo">TREATIES<span id="diploBadge" class="badge hidden">!</span></button>
+          <button data-tab="comms">COMMS<span id="commsBadge" class="badge hidden">•</span></button>
+        </nav>
+        <div id="tabBody">
+          <div class="tab" id="tab-target"></div>
+          <div class="tab hidden" id="tab-build"></div>
+          <div class="tab hidden" id="tab-intel"></div>
+          <div class="tab hidden" id="tab-diplo"></div>
+          <div class="tab hidden" id="tab-comms">
+            <div id="chatLog"></div>
+            <div class="chat-input">
+              <select id="chatTo"></select>
+              <input id="chatText" maxlength="300" placeholder="Transmit..." />
+              <button id="chatSend" class="btn small">SEND</button>
+            </div>
+          </div>
+        </div>
+        <div id="ordersBox"></div>
+      </aside>
+    </div>
+    <footer id="logBar"></footer>
+  </section>
+
+  <!-- ================= OVERLAYS ================= -->
+  <div id="howto" class="overlay hidden">
+    <div class="modal">
+      <h2>HOW TO PLAY <span class="dim">// 60-SECOND BRIEFING</span></h2>
+      <ol>
+        <li><b>The world is on fire.</b> Every Cold War crisis is live at once. Seven coalitions start at their historic peak arsenals. ⚠ markers are <b>TRIGSITs</b> (triggering situations).</li>
+        <li><b>The game ends when every TRIGSIT is resolved</b>, by negotiation, by one side winning militarily, or by its timer running out.</li>
+        <li><b>Win</b> with the best <b>INDDIR / SUFDDIR</b> ratio: damage you inflict directly ÷ damage you suffer directly. Hit hard, get hit little.</li>
+        <li><b>Each turn</b>, everyone secretly queues orders. Then all orders resolve at once. You get <b>3 actions</b> per turn (strike, spy, deploy, negotiate), plus unlimited builds you can afford.</li>
+        <li><b>Resources:</b> IND (industry), URA (uranium) and INF (influence) come from your coalition's territories. Damaged land produces less.</li>
+        <li><b>Nukes</b> raise the <b>escalation meter</b>. Higher escalation means bigger damage, pricier strikes, and a higher chance the enemy auto-retaliates. <b>At 10 it's ESCHATON</b>: every silo fires and the game ends.</li>
+        <li><b>Spies</b> reveal an enemy coalition's arsenal, or plant false intel so enemies see fake numbers. Trust nothing.</li>
+        <li><b>Treaties:</b> propose a non-aggression pact. Breaking one (or nuking a partner) is announced to the world.</li>
+      </ol>
+      <p class="dim">Tip: click a TRIGSIT to deploy divisions or negotiate. Click an enemy country to strike it. Then hit <b>SUBMIT ORDERS</b>.</p>
+      <button id="howtoClose" class="btn primary">UNDERSTOOD, COMMANDER</button>
+    </div>
+  </div>
+
+  <div id="gameover" class="overlay hidden"><div class="modal" id="gameoverBody"></div></div>
+  <div id="toast" class="hidden"></div>
+
+  <script src="/vendor/d3.min.js"></script>
+  <script src="/vendor/topojson-client.min.js"></script>
+  <script src="/config.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/client.js"></script>
+</body>
+</html>

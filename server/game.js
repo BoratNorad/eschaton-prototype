@@ -1,0 +1,607 @@
+// ESCHATON game engine. Server-authoritative; clients only submit orders.
+const CONFIG = require('./config');
+const TERR = require('./territories');
+const atlas = require('world-atlas/countries-110m.json');
+const AI = require('./ai');
+
+const COALS = Object.keys(CONFIG.coalitions);
+const UNIT_KEYS = Object.keys(CONFIG.units);
+const RES_KEYS = Object.keys(CONFIG.resources);
+
+const NAMES = {};
+for (const g of atlas.objects.countries.geometries) if (g.id) NAMES[g.id] = g.properties.name;
+
+const AI_NAMES = ['HAL', 'WOPR', 'COLOSSUS', 'GUARDIAN', 'PERIMETR', 'SAGE', 'ORACLE', 'SKYNET-0', 'JOSHUA', 'DEEP-RED',
+  'MINUTEMAN', 'TOPOL', 'DF-5', 'AGNI', 'GHAURI', 'SHAHAB', 'SCUD', 'RSA-3', 'CONDOR', 'FROG-7', 'TITAN', 'R-7'];
+
+let uid = 0;
+const newId = (p) => `${p}${(++uid).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const rnd = () => Math.random();
+const pick = (a) => a[Math.floor(rnd() * a.length)];
+const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const round1 = (v) => Math.round(v * 10) / 10;
+
+class Game {
+  constructor(code, hostName) {
+    this.code = code;
+    this.phase = 'lobby'; // lobby | orders | report | over
+    this.players = new Map();
+    this.hostId = null;
+    this.turnSeconds = CONFIG.defaultTurnSeconds;
+    this.turn = 0;
+    this.deadline = 0;
+    this.escalation = 0;
+    this.territories = {};
+    this.trigsits = [];
+    this.treaties = [];
+    this.scores = {};
+    this.log = [];
+    this.chat = [];
+    this.falseIntel = {}; // coalition -> {mode, until}
+    this.lastStruckBy = {}; // coalition -> coalition (for AI retaliation)
+    this.lastReport = null;
+    this.winner = null;
+    this.endReason = null;
+  }
+
+  // ------------------------------------------------------------ lobby
+  addPlayer(name, coalition) {
+    const id = newId('p');
+    const token = newId('t') + newId('');
+    const p = this._makePlayer(id, name, false);
+    p.token = token;
+    if (coalition && this.canJoinCoalition(coalition)) p.coalition = coalition;
+    this.players.set(id, p);
+    if (!this.hostId) this.hostId = id;
+    return p;
+  }
+  _makePlayer(id, name, isAI) {
+    return {
+      id, name: String(name || 'Commander').slice(0, 16), isAI, coalition: null, connected: !isAI,
+      res: { ind: 0, ura: 0, inf: 0 }, arsenal: Object.fromEntries(UNIT_KEYS.map((k) => [k, 0])),
+      intel: {}, orders: null, submitted: false, private: [],
+    };
+  }
+  humans() { return [...this.players.values()].filter((p) => !p.isAI); }
+  coalitionMembers(c) { return [...this.players.values()].filter((p) => p.coalition === c); }
+  canJoinCoalition(c) { return COALS.includes(c) && this.coalitionMembers(c).length < CONFIG.maxPerCoalition; }
+  setCoalition(pid, c) {
+    const p = this.players.get(pid);
+    if (!p || this.phase !== 'lobby') return false;
+    if (c === null) { p.coalition = null; return true; }
+    if (p.coalition === c || !this.canJoinCoalition(c)) return false;
+    p.coalition = c;
+    return true;
+  }
+  removePlayer(pid) {
+    this.players.delete(pid);
+    if (this.hostId === pid) this.hostId = this.humans()[0]?.id || null;
+  }
+
+  // ------------------------------------------------------------ start
+  start() {
+    // humans without a coalition go to the least-populated one
+    for (const p of this.humans()) {
+      if (!p.coalition) {
+        const opts = COALS.filter((c) => this.canJoinCoalition(c));
+        const min = Math.min(...opts.map((c) => this.coalitionMembers(c).length));
+        p.coalition = pick(opts.filter((c) => this.coalitionMembers(c).length === min));
+      }
+    }
+    // AI fills slots
+    let ai = 0;
+    for (const c of COALS) {
+      while (this.coalitionMembers(c).length < CONFIG.minSlotsPerCoalition) {
+        const p = this._makePlayer(newId('a'), `${AI_NAMES[ai++ % AI_NAMES.length]}`, true);
+        p.coalition = c;
+        this.players.set(p.id, p);
+      }
+    }
+    // starting resources + split arsenal
+    for (const c of COALS) {
+      const def = CONFIG.coalitions[c].start;
+      const mem = this.coalitionMembers(c);
+      mem.forEach((p, i) => {
+        p.res = { ...def.res };
+        for (const k of UNIT_KEYS) {
+          const tot = def.arsenal[k] || 0;
+          p.arsenal[k] = Math.floor(tot / mem.length) + (i < tot % mem.length ? 1 : 0);
+        }
+      });
+      this.scores[c] = { inflicted: 0, suffered: 0 };
+    }
+    // territories
+    for (const [id, row] of Object.entries(TERR)) {
+      const d = CONFIG.defaultYield;
+      const [coalition, ind = d.ind, ura = d.ura, inf = d.inf, hp = d.hp] = row;
+      this.territories[id] = { id, name: NAMES[id] || id, coalition, yields: { ind, ura, inf }, hp, maxHp: hp };
+    }
+    // trigsits
+    this.trigsits = CONFIG.trigsits.map((t) => ({
+      ...t, control: 0, peace: 0, turnsLeft: t.timer, status: 'active', winner: null,
+      forces: { [t.sides[0]]: {}, [t.sides[1]]: {} }, negotiators: {},
+    }));
+    this.turn = 1;
+    this.pushLog(`ESCHATON INITIATED. ${this.players.size} commanders across ${COALS.length} coalitions. ${this.trigsits.length} TRIGSITs active.`, 'sys');
+    this.beginOrders();
+  }
+
+  beginOrders() {
+    this.phase = 'orders';
+    this.deadline = Date.now() + this.turnSeconds * 1000;
+    for (const p of this.players.values()) { p.orders = null; p.submitted = false; }
+    // AI orders immediately
+    for (const p of this.players.values()) if (p.isAI) { p.orders = AI.orders(this, p); p.submitted = true; }
+  }
+
+  allSubmitted() {
+    return [...this.players.values()].every((p) => p.submitted || (!p.isAI && !p.connected));
+  }
+
+  submitOrders(pid, orders) {
+    const p = this.players.get(pid);
+    if (!p || this.phase !== 'orders') return false;
+    const builds = {};
+    for (const k of UNIT_KEYS) {
+      const n = Math.floor(Number(orders?.builds?.[k]) || 0);
+      if (n > 0) builds[k] = Math.min(n, 50);
+    }
+    const actions = Array.isArray(orders?.actions) ? orders.actions.slice(0, CONFIG.actionsPerTurn) : [];
+    p.orders = { builds, actions };
+    p.submitted = true;
+    return true;
+  }
+  unsubmit(pid) {
+    const p = this.players.get(pid);
+    if (p && this.phase === 'orders') p.submitted = false;
+  }
+
+  // ------------------------------------------------------------ helpers
+  unitCost(p, unit) {
+    const base = CONFIG.units[unit].cost;
+    const ab = CONFIG.coalitions[p.coalition].ability;
+    const cost = { ...base };
+    if (unit === 'conv' && ab.id === 'peopleswar') cost.ind = Math.ceil(cost.ind * (1 - ab.value));
+    if (unit === 'spies' && ab.id === 'proxy') for (const k in cost) cost[k] = Math.ceil(cost[k] / 2);
+    return cost;
+  }
+  canAfford(p, cost) { return Object.entries(cost).every(([k, v]) => p.res[k] >= v - 1e-9); }
+  pay(p, cost) { for (const [k, v] of Object.entries(cost)) p.res[k] -= v; }
+  strikeInfCost(kind) {
+    return Math.ceil(CONFIG.strike[kind].infCost * (1 + this.escalation * CONFIG.strike.escalationInfCostMult));
+  }
+  coalTotal(c, key) { return this.coalitionMembers(c).reduce((s, p) => s + p.arsenal[key], 0); }
+  activeTreaty(a, b) {
+    return this.treaties.find((t) => t.status === 'active' && ((t.a === a && t.b === b) || (t.a === b && t.b === a)));
+  }
+  pushLog(text, cls = '') {
+    const e = { turn: this.turn, text, cls, t: Date.now() };
+    this.log.push(e);
+    if (this.log.length > 300) this.log.shift();
+    if (this._events) this._events.push(e);
+    return e;
+  }
+  priv(p, text, cls = 'intel') { p.private.push({ turn: this.turn, text, cls }); if (p.private.length > 60) p.private.shift(); }
+  ratio(c) { const s = this.scores[c]; return s.inflicted / Math.max(s.suffered, CONFIG.ratioFloor); }
+  recordDamage(attC, defC, amount) {
+    if (amount <= 0) return;
+    this.scores[attC].inflicted += amount;
+    this.scores[defC].suffered += amount;
+  }
+
+  // ------------------------------------------------------------ treaties (instant)
+  proposeTreaty(pid, target) {
+    const p = this.players.get(pid);
+    if (!p || !COALS.includes(target) || target === p.coalition || this.phase === 'lobby' || this.phase === 'over') return null;
+    const exists = this.treaties.find((t) => ['proposed', 'active'].includes(t.status) &&
+      ((t.a === p.coalition && t.b === target) || (t.a === target && t.b === p.coalition)));
+    if (exists) return null;
+    const t = { id: newId('tr'), a: p.coalition, b: target, status: 'proposed', by: p.name, turn: this.turn };
+    this.treaties.push(t);
+    this.pushLog(`${p.name} (${p.coalition}) proposes a NON-AGGRESSION PACT to ${target}.`, 'treaty');
+    return t;
+  }
+  respondTreaty(pid, tid, accept) {
+    const p = this.players.get(pid);
+    const t = this.treaties.find((x) => x.id === tid);
+    if (!p || !t || t.status !== 'proposed' || t.b !== p.coalition) return null;
+    t.status = accept ? 'active' : 'rejected';
+    this.pushLog(accept ? `PACT SIGNED: ${t.a} ⟷ ${t.b} non-aggression (accepted by ${p.name}).`
+      : `${p.name} (${t.b}) REJECTS the pact offered by ${t.a}.`, 'treaty');
+    return t;
+  }
+  breakTreaty(pid, tid, reason) {
+    const p = this.players.get(pid);
+    const t = this.treaties.find((x) => x.id === tid);
+    if (!p || !t || t.status !== 'active' || (t.a !== p.coalition && t.b !== p.coalition)) return null;
+    t.status = 'broken';
+    t.brokenBy = p.coalition;
+    const other = t.a === p.coalition ? t.b : t.a;
+    p.res.inf = Math.max(0, p.res.inf - CONFIG.treaty.breakInfPenalty);
+    this.escalation = Math.min(CONFIG.escalation.max, this.escalation + CONFIG.escalation.treatyBreak);
+    this.pushLog(`⚠ TREATY BROKEN: ${p.name} (${p.coalition}) tears up the pact with ${other}${reason ? ' — ' + reason : ''}. Escalation +${CONFIG.escalation.treatyBreak}.`, 'alert');
+    return t;
+  }
+
+  // ------------------------------------------------------------ resolution
+  resolve() {
+    this._events = [];
+    this._anims = [];
+    this._nukesThisTurn = 0;
+    for (const p of this.players.values()) p._spyUsed = 0, p._dlvUsed = 0;
+    this.pushLog(`── TURN ${this.turn} RESOLUTION ──`, 'sys');
+
+    // Collect actions in a fair random player order
+    const order = shuffle([...this.players.values()]);
+    const acts = (type) => order.flatMap((p) => (p.orders?.actions || []).filter((a) => a && a.type === type).map((a) => [p, a]));
+
+    for (const [p, a] of acts('spy')) this.doSpy(p, a);
+    for (const [p, a] of acts('negotiate')) this.doNegotiate(p, a);
+    for (const [p, a] of acts('commit')) this.doCommit(p, a);
+    for (const [p, a] of acts('withdraw')) this.doWithdraw(p, a);
+    for (const [p, a] of acts('strike')) {
+      if (this.phase === 'over') break;
+      this.doStrike(p, a.kind, a.target, false);
+      if (this.escalation >= CONFIG.escalation.max) { this.eschaton(); break; }
+    }
+
+    if (this.phase !== 'over') {
+      this.resolveTrigsits();
+      for (const p of order) this.doBuilds(p);
+      this.doIncome();
+      AI.diplomacy(this);
+      this.expireTreatyProposals();
+      if (this._nukesThisTurn === 0 && this.escalation > 0) {
+        this.escalation = Math.max(0, this.escalation - CONFIG.escalation.quietTurnDecay);
+        this.pushLog(`No nuclear use this turn. Escalation eases to ${round1(this.escalation)}.`, 'calm');
+      }
+      this.checkEnd();
+    }
+
+    const report = { turn: this.turn, events: this._events, anims: this._anims };
+    this.lastReport = report;
+    this._events = null;
+    return report;
+  }
+
+  nextTurn() {
+    if (this.phase === 'over') return;
+    this.turn++;
+    this.beginOrders();
+  }
+
+  doSpy(p, a) {
+    const target = a.target;
+    if (p.arsenal.spies - p._spyUsed < 1) return;
+    if (a.mode === 'plant') {
+      p._spyUsed++;
+      const mode = a.fake === 'deflate' ? 'deflate' : 'inflate';
+      this.falseIntel[p.coalition] = { mode, until: this.turn + CONFIG.spy.falseIntelTurns };
+      this.priv(p, `Disinformation planted: enemy spies will see ${mode.toUpperCase()}D ${p.coalition} numbers until turn ${this.turn + CONFIG.spy.falseIntelTurns}.`);
+      return;
+    }
+    if (!COALS.includes(target) || target === p.coalition) return;
+    p._spyUsed++;
+    const ab = CONFIG.coalitions[p.coalition].ability;
+    const chance = clamp(CONFIG.spy.baseSuccess - CONFIG.spy.perEnemySpy * this.coalTotal(target, 'spies') + (ab.id === 'proxy' ? ab.value : 0),
+      CONFIG.spy.minSuccess, 0.95);
+    if (rnd() > chance) {
+      p.arsenal.spies--;
+      this.pushLog(`🕵 SPY CAPTURED: ${target} counter-intelligence catches an agent of ${p.name} (${p.coalition}).`, 'intel');
+      return;
+    }
+    const snap = {};
+    for (const k of UNIT_KEYS) snap[k] = this.coalTotal(target, k);
+    for (const tr of this.trigsits) for (const side of tr.sides) if (side === target) snap.conv += Object.values(tr.forces[side]).reduce((s, n) => s + n, 0);
+    const fi = this.falseIntel[target];
+    if (fi && fi.until >= this.turn) {
+      const m = fi.mode === 'inflate' ? CONFIG.spy.inflateMult : CONFIG.spy.deflateMult;
+      for (const k of UNIT_KEYS) snap[k] = Math.max(0, Math.round(snap[k] * m * (0.85 + rnd() * 0.3)));
+    }
+    p.intel[target] = { turn: this.turn, arsenal: snap };
+    this.priv(p, `INTEL ON ${target}: STR ${snap.strategic} · TAC ${snap.tactical} · DLV ${snap.delivery} · ABM ${snap.defense} · CONV ${snap.conv} · SPY ${snap.spies}`);
+  }
+
+  doNegotiate(p, a) {
+    const tr = this.trigsits.find((t) => t.id === a.trigsit && t.status === 'active');
+    const amt = Math.floor(Number(a.amount) || 0);
+    if (!tr || amt <= 0 || p.res.inf < amt) return;
+    p.res.inf -= amt;
+    const ab = CONFIG.coalitions[p.coalition].ability;
+    const mult = ab.id === 'nonaligned' ? ab.value : 1;
+    const gain = amt * CONFIG.trigsit.peacePerInfluence * mult;
+    tr.peace = Math.min(CONFIG.trigsit.peaceThreshold, tr.peace + gain);
+    tr.negotiators[p.id] = (tr.negotiators[p.id] || 0) + amt;
+    this.pushLog(`🕊 ${p.name} (${p.coalition}) invests ${amt} influence in talks at ${tr.name}. Peace ${Math.round(tr.peace)}%.`, 'calm');
+  }
+
+  doCommit(p, a) {
+    const tr = this.trigsits.find((t) => t.id === a.trigsit && t.status === 'active');
+    const n = Math.min(Math.floor(Number(a.amount) || 0), p.arsenal.conv);
+    if (!tr || n <= 0 || !tr.sides.includes(p.coalition)) return;
+    p.arsenal.conv -= n;
+    tr.forces[p.coalition][p.id] = (tr.forces[p.coalition][p.id] || 0) + n;
+    this.pushLog(`${p.name} (${p.coalition}) deploys ${n} divisions to ${tr.name}.`, 'mil');
+  }
+
+  doWithdraw(p, a) {
+    const tr = this.trigsits.find((t) => t.id === a.trigsit && t.status === 'active');
+    if (!tr || !tr.sides.includes(p.coalition)) return;
+    const n = tr.forces[p.coalition][p.id] || 0;
+    if (!n) return;
+    delete tr.forces[p.coalition][p.id];
+    p.arsenal.conv += n;
+    this.pushLog(`${p.name} (${p.coalition}) withdraws ${n} divisions from ${tr.name}.`, 'mil');
+  }
+
+  sideForces(tr, side) { return Object.values(tr.forces[side]).reduce((s, n) => s + n, 0); }
+
+  killForces(tr, side, n) {
+    let killed = 0;
+    const f = tr.forces[side];
+    while (killed < n) {
+      const ids = Object.keys(f).filter((id) => f[id] > 0);
+      if (!ids.length) break;
+      const id = pick(ids);
+      f[id]--; killed++;
+      if (f[id] <= 0) delete f[id];
+    }
+    return killed;
+  }
+
+  doStrike(p, kind, target, isRetaliation) {
+    if (!['tactical', 'strategic'].includes(kind) || !target) return false;
+    const S = CONFIG.strike[kind];
+    let defC, ter, tr;
+    if (target.kind === 'territory') {
+      ter = this.territories[target.id];
+      if (!ter || ter.coalition === p.coalition) return false;
+      defC = ter.coalition;
+    } else if (target.kind === 'trigsit') {
+      tr = this.trigsits.find((t) => t.id === target.id && t.status === 'active');
+      if (!tr || kind !== 'tactical' || !tr.sides.includes(p.coalition)) return false;
+      defC = tr.sides.find((s) => s !== p.coalition);
+    } else return false;
+
+    if (p.arsenal[kind] < 1) { if (!isRetaliation) this.priv(p, `Strike aborted: no ${kind} warheads.`, 'warn'); return false; }
+    if (kind === 'strategic' && p._dlvUsed >= p.arsenal.delivery) { if (!isRetaliation) this.priv(p, 'Strike aborted: no free delivery system.', 'warn'); return false; }
+    const infCost = isRetaliation ? 0 : this.strikeInfCost(kind);
+    if (p.res.inf < infCost) { this.priv(p, `Strike aborted: need ${infCost} influence (political cost).`, 'warn'); return false; }
+
+    const tre = this.activeTreaty(p.coalition, defC);
+    if (tre) this.breakTreaty(p.id, tre.id, 'by launching a nuclear strike');
+
+    p.res.inf -= infCost;
+    p.arsenal[kind]--;
+    if (kind === 'strategic') p._dlvUsed++;
+    this._nukesThisTurn++;
+    this.escalation = Math.min(CONFIG.escalation.max, this.escalation + (isRetaliation ? CONFIG.strike.retaliationEscalation : S.escalation));
+    this.lastStruckBy[defC] = p.coalition;
+
+    const targetName = ter ? ter.name : tr.name;
+    const anim = { from: CONFIG.coalitions[p.coalition].capital, to: ter ? null : tr.lonlat, toTerritory: ter?.id, kind, coalition: p.coalition, intercepted: false };
+    this._anims.push(anim);
+
+    // interception
+    const ab = CONFIG.coalitions[defC].ability;
+    const icp = Math.min(CONFIG.strike.interceptCap, this.coalTotal(defC, 'defense') * CONFIG.strike.interceptPerDefense + (ab.id === 'aegis' ? ab.value : 0));
+    const tag = isRetaliation ? '↩ RETALIATION' : kind === 'strategic' ? '☢ STRATEGIC STRIKE' : '☢ TACTICAL STRIKE';
+    if (ter && rnd() < icp) {
+      anim.intercepted = true;
+      this.pushLog(`${tag}: ${p.name} (${p.coalition}) → ${targetName} [${defC}] — INTERCEPTED by missile defense.`, 'nuke');
+    } else {
+      const mult = 1 + this.escalation * CONFIG.strike.escalationDamageMult;
+      if (ter) {
+        const dmg = Math.min(ter.hp, Math.round(S.damage * mult));
+        ter.hp -= dmg;
+        this.recordDamage(p.coalition, defC, dmg);
+        this.pushLog(`${tag}: ${p.name} (${p.coalition}) → ${targetName} [${defC}] — ${dmg} damage. ${ter.hp <= 0 ? targetName.toUpperCase() + ' IS GLASS.' : ''}`, 'nuke');
+      } else {
+        const enemy = this.sideForces(tr, defC);
+        const kill = Math.min(enemy, Math.max(S.trigsitKillMin, Math.ceil(enemy * S.trigsitKillPct)));
+        const k = this.killForces(tr, defC, kill);
+        const dmg = Math.round(k * CONFIG.trigsit.damagePerCasualty * 2 * mult);
+        this.recordDamage(p.coalition, defC, dmg);
+        this.pushLog(`${tag}: ${p.name} (${p.coalition}) nukes ${defC} forces at ${targetName} — ${k} divisions vaporized (${dmg} damage).`, 'nuke');
+      }
+    }
+
+    // automatic retaliation (one level deep — no infinite chains)
+    if (!isRetaliation) {
+      const dab = CONFIG.coalitions[defC].ability;
+      const chance = CONFIG.strike.retaliationBase + this.escalation * CONFIG.strike.retaliationPerLevel + (dab.id === 'deadhand' ? dab.value : 0);
+      if (rnd() < chance) {
+        const shooters = this.coalitionMembers(defC).sort((x, y) => (y.arsenal.strategic + y.arsenal.tactical) - (x.arsenal.strategic + x.arsenal.tactical));
+        const s = shooters[0];
+        if (s) {
+          const rk = s.arsenal.strategic > 0 && s._dlvUsed < s.arsenal.delivery ? 'strategic' : s.arsenal.tactical > 0 ? 'tactical' : null;
+          const targets = Object.values(this.territories).filter((t) => t.coalition === p.coalition && t.hp > 0).sort((x, y) => y.hp - x.hp);
+          if (rk && targets.length) {
+            this.pushLog(`LAUNCH ON WARNING: ${defC} automated systems retaliate against ${p.coalition}!`, 'alert');
+            this.doStrike(s, rk, { kind: 'territory', id: targets[0].id }, true);
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  eschaton() {
+    this.escalation = CONFIG.escalation.max;
+    this.pushLog('████ ESCHATON ████ Escalation has reached maximum. Every silo opens. Full exchange.', 'alert');
+    for (const p of shuffle([...this.players.values()])) {
+      const enemies = Object.values(this.territories).filter((t) => t.coalition !== p.coalition && t.hp > 0 && !this.activeTreaty(p.coalition, t.coalition));
+      while ((p.arsenal.strategic > 0 || p.arsenal.tactical > 0) && enemies.length) {
+        const kind = p.arsenal.strategic > 0 ? 'strategic' : 'tactical';
+        p.arsenal[kind]--;
+        const ter = pick(enemies);
+        const defC = ter.coalition;
+        const ab = CONFIG.coalitions[defC].ability;
+        const icp = Math.min(CONFIG.strike.interceptCap, this.coalTotal(defC, 'defense') * CONFIG.strike.interceptPerDefense + (ab.id === 'aegis' ? ab.value : 0));
+        const intercepted = rnd() < icp;
+        if (this._anims.length < 120) this._anims.push({ from: CONFIG.coalitions[p.coalition].capital, toTerritory: ter.id, kind, coalition: p.coalition, intercepted });
+        if (intercepted) continue;
+        const dmg = Math.min(ter.hp, Math.round(CONFIG.strike[kind].damage * 2));
+        ter.hp -= dmg;
+        this.recordDamage(p.coalition, defC, dmg);
+        if (ter.hp <= 0) enemies.splice(enemies.indexOf(ter), 1);
+      }
+    }
+    this.endGame('ESCHATON — mutual assured destruction');
+  }
+
+  resolveTrigsits() {
+    const T = CONFIG.trigsit;
+    for (const tr of this.trigsits) {
+      if (tr.status !== 'active') continue;
+      const [A, B] = tr.sides;
+      const fa = this.sideForces(tr, A), fb = this.sideForces(tr, B);
+      // combat
+      if (fa > 0 && fb > 0) {
+        const lossA = this.killForces(tr, A, Math.max(1, Math.round(fb * T.casualtyRate)));
+        const lossB = this.killForces(tr, B, Math.max(1, Math.round(fa * T.casualtyRate)));
+        this.recordDamage(B, A, lossA * T.damagePerCasualty);
+        this.recordDamage(A, B, lossB * T.damagePerCasualty);
+        this.pushLog(`⚔ ${tr.name}: ${A} loses ${lossA}, ${B} loses ${lossB} divisions.`, 'mil');
+      }
+      const eff = (c, f) => f * (CONFIG.coalitions[c].ability.id === 'mountain' ? 1 + CONFIG.coalitions[c].ability.value : 1);
+      const net = eff(A, fa) - eff(B, fb);
+      tr.control = clamp(tr.control + net * T.progressPerForce, -T.winThreshold, T.winThreshold);
+      tr.turnsLeft--;
+
+      if (tr.peace >= T.peaceThreshold) this.closeTrigsit(tr, 'peace', null);
+      else if (tr.control >= T.winThreshold) this.closeTrigsit(tr, 'military', A);
+      else if (tr.control <= -T.winThreshold) this.closeTrigsit(tr, 'military', B);
+      else if (tr.turnsLeft <= 0) this.closeTrigsit(tr, 'timer', null);
+    }
+  }
+
+  closeTrigsit(tr, how, winner) {
+    tr.status = 'resolved';
+    tr.how = how;
+    tr.winner = winner;
+    // return surviving forces
+    for (const side of tr.sides) for (const [pid, n] of Object.entries(tr.forces[side])) {
+      const p = this.players.get(pid);
+      if (p) p.arsenal.conv += n;
+    }
+    tr.forces = { [tr.sides[0]]: {}, [tr.sides[1]]: {} };
+    if (how === 'peace') {
+      const ids = Object.keys(tr.negotiators);
+      for (const id of ids) { const p = this.players.get(id); if (p) for (const [k, v] of Object.entries(CONFIG.trigsit.peaceDividend)) p.res[k] += v; }
+      this.pushLog(`✅ TRIGSIT RESOLVED — ${tr.name}: settled at the negotiating table. ${ids.length} negotiators share the peace dividend.`, 'resolve');
+    } else if (how === 'military') {
+      const mem = this.coalitionMembers(winner);
+      for (const p of mem) for (const [k, v] of Object.entries(CONFIG.trigsit.militaryReward)) p.res[k] += v / mem.length;
+      this.pushLog(`✅ TRIGSIT RESOLVED — ${tr.name}: ${winner} wins militarily and seizes the spoils.`, 'resolve');
+    } else {
+      this.pushLog(`✅ TRIGSIT RESOLVED — ${tr.name}: the clock runs out. Frozen conflict, no victor.`, 'resolve');
+    }
+  }
+
+  doBuilds(p) {
+    if (!p.orders) return;
+    const built = [];
+    for (const [unit, n] of Object.entries(p.orders.builds || {})) {
+      if (!CONFIG.units[unit]) continue;
+      let c = 0;
+      const cost = this.unitCost(p, unit);
+      while (c < n && this.canAfford(p, cost)) { this.pay(p, cost); p.arsenal[unit]++; c++; }
+      if (c) built.push(`${c} ${CONFIG.units[unit].short}`);
+      if (c < n) this.priv(p, `Build shortfall: only ${c}/${n} ${CONFIG.units[unit].short} affordable.`, 'warn');
+    }
+    if (built.length) this.priv(p, `Production complete: ${built.join(', ')}.`, 'ok');
+  }
+
+  coalitionIncome(c) {
+    const inc = { ind: 0, ura: 0, inf: 0 };
+    for (const t of Object.values(this.territories)) {
+      if (t.coalition !== c) continue;
+      const f = t.maxHp ? t.hp / t.maxHp : 0;
+      for (const k of RES_KEYS) inc[k] += t.yields[k] * f;
+    }
+    return inc;
+  }
+  playerIncome(p) {
+    const ci = this.coalitionIncome(p.coalition);
+    const n = this.coalitionMembers(p.coalition).length || 1;
+    const ab = CONFIG.coalitions[p.coalition].ability;
+    const out = {};
+    for (const k of RES_KEYS) out[k] = ci[k] / n + CONFIG.basePlayerIncome[k];
+    if (ab.id === 'uranium') out.ura += ab.value;
+    return out;
+  }
+  doIncome() {
+    for (const p of this.players.values()) {
+      const inc = this.playerIncome(p);
+      for (const k of RES_KEYS) p.res[k] += inc[k];
+    }
+  }
+
+  expireTreatyProposals() {
+    for (const t of this.treaties) if (t.status === 'proposed' && this.turn - t.turn >= 2) {
+      t.status = 'expired';
+      this.pushLog(`Pact offer ${t.a} → ${t.b} expires unanswered.`, 'treaty');
+    }
+  }
+
+  checkEnd() {
+    if (this.trigsits.every((t) => t.status !== 'active')) this.endGame('All TRIGSITs resolved');
+    else if (this.turn >= CONFIG.maxTurns) this.endGame('Turn limit reached');
+  }
+
+  endGame(reason) {
+    this.phase = 'over';
+    this.endReason = reason;
+    const ranked = COALS.slice().sort((a, b) => this.ratio(b) - this.ratio(a));
+    this.winner = ranked[0];
+    this.pushLog(`GAME OVER (${reason}). ${this.winner} prevails with INDDIR/SUFDDIR ratio ${this.ratio(this.winner).toFixed(2)}.`, 'sys');
+  }
+
+  // ------------------------------------------------------------ views
+  publicPlayers() {
+    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, coalition: p.coalition, isAI: p.isAI, connected: p.connected, submitted: p.submitted, host: p.id === this.hostId }));
+  }
+
+  lobbyView() {
+    return { code: this.code, phase: this.phase, hostId: this.hostId, turnSeconds: this.turnSeconds, players: this.publicPlayers() };
+  }
+
+  viewFor(pid) {
+    const me = this.players.get(pid);
+    const scoreboard = COALS.map((c) => ({ c, ...this.scores[c], ratio: this.ratio(c) }));
+    const allies = me ? this.coalitionMembers(me.coalition).map((p) => ({ id: p.id, name: p.name, isAI: p.isAI, arsenal: p.arsenal, res: mapRound(p.res) })) : [];
+    return {
+      code: this.code, phase: this.phase, turn: this.turn, deadline: this.deadline, now: Date.now(), hostId: this.hostId,
+      turnSeconds: this.turnSeconds, escalation: this.escalation,
+      players: this.publicPlayers(),
+      territories: Object.fromEntries(Object.values(this.territories).map((t) => [t.id, { c: t.coalition, hp: t.hp, maxHp: t.maxHp, y: t.yields, name: t.name }])),
+      trigsits: this.trigsits.map((t) => ({
+        id: t.id, name: t.name, lonlat: t.lonlat, sides: t.sides, control: t.control, peace: t.peace, turnsLeft: t.turnsLeft,
+        status: t.status, how: t.how, winner: t.winner,
+        forces: Object.fromEntries(t.sides.map((s) => [s, this.sideForces(t, s)])),
+        mine: me ? (t.forces[me.coalition]?.[me.id] || 0) : 0,
+      })),
+      treaties: this.treaties.filter((t) => t.status !== 'expired' && t.status !== 'rejected').slice(-30),
+      scoreboard,
+      log: this.log.slice(-120),
+      lastReport: this.lastReport,
+      winner: this.winner, endReason: this.endReason,
+      strikeCost: { tactical: this.strikeInfCost('tactical'), strategic: this.strikeInfCost('strategic') },
+      me: me && {
+        id: me.id, name: me.name, coalition: me.coalition, res: mapRound(me.res), arsenal: me.arsenal,
+        income: mapRound(this.playerIncome(me)), intel: me.intel, private: me.private.slice(-40),
+        submitted: me.submitted, orders: me.orders,
+        costs: Object.fromEntries(UNIT_KEYS.map((k) => [k, this.unitCost(me, k)])),
+        falseIntel: this.falseIntel[me.coalition] || null,
+      },
+      allies,
+    };
+  }
+}
+
+function mapRound(o) { const r = {}; for (const k in o) r[k] = Math.floor(o[k] * 10) / 10; return r; }
+
+Game.COALS = COALS;
+module.exports = Game;
