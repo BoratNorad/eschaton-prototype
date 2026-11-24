@@ -126,6 +126,14 @@
   </div>
 
   <div id="gameover" class="overlay hidden"><div class="modal" id="gameoverBody"></div></div>
+  <div id="lost" class="overlay hidden">
+    <div class="modal">
+      <h2>⚠ CONNECTION TO GAME LOST</h2>
+      <p>The server restarted, so this game no longer exists. Games live in server memory, so a redeploy, or the free server going to sleep, wipes them.</p>
+      <p class="dim">Your orders were not submitted. Sorry, Commander.</p>
+      <div class="row"><button class="btn ghost" id="lostMenu">BACK TO MENU</button><button class="btn primary" id="lostRestart">START A NEW GAME</button></div>
+    </div>
+  </div>
   <div id="toast" class="hidden"></div>
   <div id="coachRing" class="hidden"></div>
   <div id="coach" class="hidden"></div>

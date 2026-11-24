@@ -125,6 +125,9 @@ io.on('connection', (socket) => {
     return room && p ? { room, g: room.game, p } : null;
   };
   const err = (msg) => socket.emit('errorMsg', msg);
+  // the game this socket was in no longer exists (server restarted / redeployed)
+  const lost = () => socket.emit('gameLost');
+  const need = () => { const x = ctx(); if (!x) lost(); return x; };
   const bind = (room, p) => {
     p.socketId = socket.id; p.connected = true;
     socket.data.code = room.game.code; socket.data.pid = p.id;
@@ -152,7 +155,7 @@ io.on('connection', (socket) => {
 
   socket.on('join', ({ code, name, token } = {}) => {
     const room = rooms.get(clean(code, 8).toUpperCase());
-    if (!room) return err('No game with that room code.');
+    if (!room) return token ? lost() : err('No game with that room code.');
     const g = room.game;
     // reconnect
     if (token) {
@@ -189,20 +192,23 @@ io.on('connection', (socket) => {
     x.g.start();
     broadcast(x.room);
   });
-  socket.on('orders', (orders) => {
-    const x = ctx(); if (!x) return;
-    if (x.g.submitOrders(x.p.id, orders)) broadcast(x.room);
+  socket.on('orders', (orders, ack) => {
+    const reply = typeof ack === 'function' ? ack : () => {};
+    const x = need(); if (!x) return reply({ ok: false, reason: 'lost' });
+    const ok = x.g.submitOrders(x.p.id, orders);
+    reply({ ok, reason: ok ? null : 'Orders are closed for this turn.' });
+    if (ok) broadcast(x.room);
   });
   socket.on('unsubmit', () => {
-    const x = ctx(); if (!x) return;
+    const x = need(); if (!x) return;
     x.g.unsubmit(x.p.id); broadcast(x.room);
   });
-  socket.on('treaty:propose', (target) => { const x = ctx(); if (x && x.g.proposeTreaty(x.p.id, target)) broadcast(x.room); });
-  socket.on('treaty:respond', ({ id, accept } = {}) => { const x = ctx(); if (x && x.g.respondTreaty(x.p.id, id, !!accept)) broadcast(x.room); });
-  socket.on('treaty:break', (id) => { const x = ctx(); if (x && x.g.breakTreaty(x.p.id, id)) broadcast(x.room); });
+  socket.on('treaty:propose', (target) => { const x = need(); if (x && x.g.proposeTreaty(x.p.id, target)) broadcast(x.room); });
+  socket.on('treaty:respond', ({ id, accept } = {}) => { const x = need(); if (x && x.g.respondTreaty(x.p.id, id, !!accept)) broadcast(x.room); });
+  socket.on('treaty:break', (id) => { const x = need(); if (x && x.g.breakTreaty(x.p.id, id)) broadcast(x.room); });
 
   socket.on('chat', ({ to, text } = {}) => {
-    const x = ctx(); if (!x) return;
+    const x = need(); if (!x) return;
     const msg = clean(text, 300);
     if (!msg) return;
     const { g, p } = x;

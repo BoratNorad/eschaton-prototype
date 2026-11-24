@@ -264,3 +264,5 @@ table.ars th { color: var(--dim); font-weight: 400; }
   #rp { height: auto; min-height: 100%; } #rp #main { grid-template-rows: 55vh auto; }
 }
 .msg.ai { font-style: italic; } .msg.ai .who { font-style: normal; }
+#coach.coach-top { bottom: auto; top: 76px; }
+@media (max-width: 900px) { #coach.coach-top { top: 8px; bottom: auto; } }

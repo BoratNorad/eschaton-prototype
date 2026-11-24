@@ -175,6 +175,16 @@
     const pad = 6;
     Object.assign(ring.style, { left: r.left - pad + 'px', top: r.top - pad + 'px', width: r.width + pad * 2 + 'px', height: r.height + pad * 2 + 'px' });
     ring.classList.remove('hidden');
+    // if the coach box sits on top of what it's pointing at, move it to the other end of the screen
+    // (deterministic: compare against where the box sits when docked at the bottom, so it never flickers)
+    const box = $('#coach');
+    const b = box.getBoundingClientRect();
+    const bottomDock = { left: b.left, right: b.right, top: window.innerHeight - 136 - box.offsetHeight, bottom: window.innerHeight - 136 };
+    if (window.innerWidth <= 900) { bottomDock.top = window.innerHeight - 8 - box.offsetHeight; bottomDock.bottom = window.innerHeight; }
+    const hits = !(bottomDock.right < r.left || bottomDock.left > r.right || bottomDock.bottom < r.top || bottomDock.top > r.bottom);
+    box.classList.toggle('coach-top', hits && r.height < window.innerHeight * 0.6);
+    // on small screens, bring the target into view once per step
+    if (placeRing.scrolled !== step && (r.bottom > window.innerHeight || r.top < 0)) { placeRing.scrolled = step; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
   }
 
   function go(n) { step = Math.max(0, Math.min(STEPS.length - 1, n)); save(); render(); }
@@ -189,6 +199,7 @@
       if (active) { $('#coach').classList.add('hidden'); $('#coachRing').classList.add('hidden'); active = false; }
       return;
     }
+    if (active && st.code !== code) { active = false; } // a new tutorial game (e.g. after a restart)
     if (!active) {
       code = st.code;
       let saved = null;

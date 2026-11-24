@@ -64,11 +64,28 @@
   socket.on('connect', tryRejoin);
 
   socket.on('joined', ({ code, pid, token }) => {
+    if (roomCode && roomCode !== code) { S = null; draftTurn = -1; lastReportTurn = -1; pendingReport = null; showGameOver.shown = false; }
     myId = pid; roomCode = code;
+    $('#lost').classList.add('hidden');
     ls.set('esch:tok:' + code, token);
     history.replaceState(null, '', '?room=' + code);
   });
   socket.on('errorMsg', (m) => { $('#landingErr').textContent = m; toast(m); });
+
+  // Server no longer has our game (restart / redeploy). Tell the player instead of failing silently.
+  let lostWasTutorial = false;
+  socket.on('gameLost', () => {
+    if (roomCode) { try { localStorage.removeItem('esch:tok:' + roomCode); } catch {} }
+    lostWasTutorial = !!S?.tutorial;
+    if (!S && !L) { history.replaceState(null, '', '/'); return; } // stale link on the landing page: just stay there
+    $('#lostRestart').textContent = lostWasTutorial ? '▶ RESTART TUTORIAL' : 'START A NEW GAME';
+    $('#lost').classList.remove('hidden');
+  });
+  $('#lostMenu').onclick = () => { location.href = '/'; };
+  $('#lostRestart').onclick = () => {
+    if (lostWasTutorial) socket.emit('tutorial', { name: myName() });
+    else socket.emit('create', { name: myName() });
+  };
 
   // ======================================================== lobby
   $('#timerSel').innerHTML = C.turnSecondOptions.map((s) => `<option value="${s}">${s}s</option>`).join('');
@@ -540,7 +557,17 @@
     if (sb) sb.onclick = () => {
       if (submitted) return socket.emit('unsubmit');
       if (draftCosts().inf > S.me.res.inf + 1e-9) toast('Warning: orders exceed your influence. Some may fail.');
-      socket.emit('orders', { builds: draft.builds, actions: draft.actions.map(({ label, ...a }) => a) });
+      sb.disabled = true; sb.textContent = 'TRANSMITTING…';
+      let answered = false;
+      const t = setTimeout(() => {
+        if (answered) return;
+        sb.disabled = false; sb.textContent = 'SUBMIT ORDERS';
+        toast(socket.connected ? 'Server did not respond. Try again.' : 'Connection lost. Reconnecting… try again in a moment.', 4000);
+      }, 5000);
+      socket.emit('orders', { builds: draft.builds, actions: draft.actions.map(({ label, ...a }) => a) }, (res) => {
+        answered = true; clearTimeout(t);
+        if (!res?.ok) { sb.disabled = false; sb.textContent = 'SUBMIT ORDERS'; if (res?.reason && res.reason !== 'lost') toast(res.reason); }
+      });
     };
   }
 
