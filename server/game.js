@@ -43,6 +43,7 @@ class Game {
     this.lastReport = null;
     this.winner = null;
     this.endReason = null;
+    this.tutorial = false;
   }
 
   // ------------------------------------------------------------ lobby
@@ -574,7 +575,7 @@ class Game {
     const allies = me ? this.coalitionMembers(me.coalition).map((p) => ({ id: p.id, name: p.name, isAI: p.isAI, arsenal: p.arsenal, res: mapRound(p.res) })) : [];
     return {
       code: this.code, phase: this.phase, turn: this.turn, deadline: this.deadline, now: Date.now(), hostId: this.hostId,
-      turnSeconds: this.turnSeconds, escalation: this.escalation,
+      turnSeconds: this.turnSeconds, escalation: this.escalation, tutorial: this.tutorial,
       players: this.publicPlayers(),
       territories: Object.fromEntries(Object.values(this.territories).map((t) => [t.id, { c: t.coalition, hp: t.hp, maxHp: t.maxHp, y: t.yields, name: t.name }])),
       trigsits: this.trigsits.map((t) => ({

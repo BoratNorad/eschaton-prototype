@@ -38,6 +38,8 @@
   if (params.get('room')) $('#codeInput').value = params.get('room').toUpperCase();
   const myName = () => { const n = $('#nameInput').value.trim() || 'Commander'; ls.set('esch:name', n); return n; };
   $('#createBtn').onclick = () => socket.emit('create', { name: myName() });
+  const startTutorial = () => { $('#howto').classList.add('hidden'); ls.set('esch:howto', '1'); socket.emit('tutorial', { name: myName() }); };
+  $$('[data-tutorial]').forEach((b) => b.onclick = startTutorial);
   $('#joinBtn').onclick = () => {
     const code = $('#codeInput').value.trim().toUpperCase();
     if (!code) return ($('#landingErr').textContent = 'Enter a room code.');
@@ -123,6 +125,7 @@
     renderTop(); renderRes(); renderScore(); renderMapState(); renderTab(); renderOrders(); renderLog();
     const pending = S.treaties.some((t) => t.status === 'proposed' && t.b === S.me?.coalition);
     $('#diploBadge').classList.toggle('hidden', !pending);
+    if (window.ESCH_onRender) window.ESCH_onRender();
   }
 
   // ======================================================== top bar
@@ -258,7 +261,7 @@
       .attr('filter', (f) => (S.territories[f.id]?.c === S.me?.coalition ? 'url(#glow)' : null));
 
     const g = gTrig.selectAll('g.trig').data(S.trigsits, (d) => d.id).join((enter) => {
-      const e = enter.append('g').on('click', (ev, d) => { ev.stopPropagation(); select({ kind: 'trigsit', id: d.id }); });
+      const e = enter.append('g').attr('data-id', (d) => d.id).on('click', (ev, d) => { ev.stopPropagation(); select({ kind: 'trigsit', id: d.id }); });
       e.append('circle').attr('class', 'ring').attr('r', 7);
       e.append('circle').attr('class', 'core').attr('r', 4.5);
       e.append('text').attr('x', 8).attr('y', 3);
@@ -583,6 +586,9 @@
     $('#goClose').onclick = () => $('#gameover').classList.add('hidden');
     $('#goNew').onclick = () => { location.href = '/'; };
   }
+
+  // read-only hooks for the tutorial coach (public/tutorial.js)
+  window.ESCH = { get S() { return S; }, get draft() { return draft; }, get selected() { return selected; }, get tab() { return tab; }, setTab: (t) => setTab(t), select: (s) => select(s) };
 
   window.addEventListener('resize', () => { /* keep it simple: viewBox scales the map */ });
 })();

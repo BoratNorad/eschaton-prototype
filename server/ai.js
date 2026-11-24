@@ -15,6 +15,7 @@ function orders(game, p) {
   const add = (a) => { if (actions.length < CONFIG.actionsPerTurn) actions.push(a); };
   const enemyTerr = (c) => Object.values(game.territories).filter((t) => t.coalition === c && t.hp > 0).sort((a, b) => b.hp - a.hp);
   let tac = p.arsenal.tactical, str = p.arsenal.strategic, inf = res.inf;
+  const holdFire = game.tutorial && game.turn <= CONFIG.tutorial.aiHoldFireTurns; // training: no unprovoked nukes early
 
   // 1. Retaliate if we were struck last turn
   const striker = game.lastStruckBy[my];
@@ -36,7 +37,7 @@ function orders(game, p) {
     if (p.arsenal.conv > 1 && actions.length < CONFIG.actionsPerTurn - 1) {
       add({ type: 'commit', trigsit: tr.id, amount: Math.ceil(p.arsenal.conv * (0.4 + rnd() * 0.3)) });
     }
-    if (theirs > mine + 3 && tac > 0 && esc < A.escalationCaution && rnd() < A.trigsitNukeChance && inf >= game.strikeInfCost('tactical')) {
+    if (!holdFire && theirs > mine + 3 && tac > 0 && esc < A.escalationCaution && rnd() < A.trigsitNukeChance && inf >= game.strikeInfCost('tactical')) {
       add({ type: 'strike', kind: 'tactical', target: { kind: 'trigsit', id: tr.id } });
       tac--; inf -= game.strikeInfCost('tactical');
     }
@@ -54,7 +55,7 @@ function orders(game, p) {
   }
 
   // 4. Rare first strike against a TRIGSIT adversary
-  if (myTrig.length && esc < A.escalationCaution - 2 && rnd() < A.firstStrikeChance && tac > 0 && inf >= game.strikeInfCost('tactical')) {
+  if (!holdFire && myTrig.length && esc < A.escalationCaution - 2 && rnd() < A.firstStrikeChance && tac > 0 && inf >= game.strikeInfCost('tactical')) {
     const enemy = pick(myTrig).sides.find((s) => s !== my);
     const t = enemyTerr(enemy)[0];
     if (t && !game.activeTreaty(my, enemy)) add({ type: 'strike', kind: 'tactical', target: { kind: 'territory', id: t.id } });

@@ -87,6 +87,13 @@ const CONFIG = {
   // fires one shot and is never hit from having an infinite ratio.
   ratioFloor: 20,
 
+  // ---------------- Tutorial ----------------
+  tutorial: {
+    coalition: 'AMNAT',
+    turnSeconds: 600,          // relaxed timer for training games
+    aiHoldFireTurns: 4,        // AI makes no unprovoked nukes for this many turns
+  },
+
   // ---------------- AI ----------------
   ai: {
     firstStrikeChance: 0.015,

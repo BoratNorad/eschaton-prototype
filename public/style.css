@@ -198,3 +198,18 @@ table.ars th { color: var(--dim); font-weight: 400; }
   #scoreboard { transform: scale(0.85); transform-origin: top left; }
   #escBox { min-width: 100%; order: 10; }
 }
+
+/* ---------- tutorial coach ---------- */
+#coach { position: fixed; left: 16px; bottom: 136px; width: 360px; max-width: calc(100vw - 32px); z-index: 150;
+  background: rgba(6,12,10,0.97); border: 1px solid var(--green); box-shadow: 0 0 28px rgba(77,255,154,0.25); padding: 12px 14px; }
+#coach.pop { animation: coachpop 0.25s ease-out; } @keyframes coachpop { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+#coach .coach-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; letter-spacing: 2px; color: var(--green); }
+#coach h3 { margin: 6px 0; color: #eafff3; letter-spacing: 2px; font-size: 15px; }
+#coach .coach-text { line-height: 1.5; font-size: 12px; }
+#coach .coach-text b { color: #fff; }
+#coach .coach-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+#coach .coach-wait { color: var(--amber); font-size: 11px; animation: blink 1.2s steps(1) infinite; }
+#coachRing { position: fixed; z-index: 140; pointer-events: none; border: 2px solid var(--amber); border-radius: 4px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.25), 0 0 18px rgba(255,176,0,0.8); animation: ringpulse 1.4s ease-in-out infinite; transition: all 0.2s; }
+@keyframes ringpulse { 50% { box-shadow: 0 0 0 9999px rgba(0,0,0,0.25), 0 0 30px rgba(255,176,0,1); } }
+@media (max-width: 900px) { #coach { left: 8px; right: 8px; bottom: 8px; width: auto; } }

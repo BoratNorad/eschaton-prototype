@@ -98,6 +98,16 @@ io.on('connection', (socket) => {
     bind(room, p);
   });
 
+  socket.on('tutorial', ({ name } = {}) => {
+    const room = createRoom();
+    const g = room.game;
+    g.tutorial = true;
+    g.turnSeconds = CONFIG.tutorial.turnSeconds;
+    const p = g.addPlayer(clean(name, 16) || 'Recruit', CONFIG.tutorial.coalition);
+    g.start();
+    bind(room, p);
+  });
+
   socket.on('join', ({ code, name, token } = {}) => {
     const room = rooms.get(clean(code, 8).toUpperCase());
     if (!room) return err('No game with that room code.');

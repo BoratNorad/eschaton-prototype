@@ -20,6 +20,7 @@
         <input id="codeInput" maxlength="5" placeholder="ROOM CODE" class="code-input" />
         <button id="joinBtn" class="btn">JOIN</button>
       </div>
+      <button class="btn green" data-tutorial>▶ TUTORIAL: START HERE</button>
       <button class="btn ghost" data-howto>HOW TO PLAY</button>
       <p id="landingErr" class="err"></p>
     </div>
@@ -119,17 +120,20 @@
         <li><b>Treaties:</b> propose a non-aggression pact. Breaking one (or nuking a partner) is announced to the world.</li>
       </ol>
       <p class="dim">Tip: click a TRIGSIT to deploy divisions or negotiate. Click an enemy country to strike it. Then hit <b>SUBMIT ORDERS</b>.</p>
-      <button id="howtoClose" class="btn primary">UNDERSTOOD, COMMANDER</button>
+      <div class="row"><button class="btn green" data-tutorial>▶ PLAY THE TUTORIAL</button><button id="howtoClose" class="btn primary">UNDERSTOOD, COMMANDER</button></div>
     </div>
   </div>
 
   <div id="gameover" class="overlay hidden"><div class="modal" id="gameoverBody"></div></div>
   <div id="toast" class="hidden"></div>
+  <div id="coachRing" class="hidden"></div>
+  <div id="coach" class="hidden"></div>
 
   <script src="/vendor/d3.min.js"></script>
   <script src="/vendor/topojson-client.min.js"></script>
   <script src="/config.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="/client.js"></script>
+  <script src="/tutorial.js"></script>
 </body>
 </html>
