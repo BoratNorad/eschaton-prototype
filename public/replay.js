@@ -119,7 +119,8 @@
         return;
       }
       const to = a.to || centroids[a.toTerritory] || [0, 0];
-      const p = gFx.append('path').attr('class', 'missile').attr('d', path({ type: 'LineString', coordinates: [a.from, to] }))
+      const from = (a.fromTerritory && centroids[a.fromTerritory]) || a.from;
+      const p = gFx.append('path').attr('class', 'missile').attr('d', path({ type: 'LineString', coordinates: [from, to] }))
         .style('stroke', col(a.coalition)).attr('filter', 'url(#glow)');
       const len = p.node().getTotalLength() || 1;
       p.attr('stroke-dasharray', `${len} ${len}`).attr('stroke-dashoffset', len)
@@ -204,7 +205,7 @@
       const mem = R.players.filter((p) => p.coalition === c);
       return `<h4 style="color:${col(c)}">${c} · ${esc(C.coalitions[c].full)}</h4>` + mem.map((p) => `
         <div class="leader" style="--c:${col(c)}">
-          <div class="l-name">${ARCH_ICON[p.persona?.archetype || 'HUMAN']} ${esc(p.persona ? p.persona.title + ' ' + p.name : p.name)}</div>
+          <div class="l-name">${ARCH_ICON[p.persona?.archetype || 'HUMAN']} ${esc(p.persona ? p.persona.title + ' ' + p.name : p.name)}${p.countryName ? ` <span class="dim">· ${esc(p.countryName)}</span>` : ''}</div>
           <div class="l-arch">${p.persona ? p.persona.archetype : 'HUMAN COMMANDER'}</div>
           ${p.persona ? `<div class="l-motto">“${esc(p.persona.motto)}”</div>` : ''}
           <div class="l-stats">dealt ${p.stats.dealt} · ☢ ${p.stats.nukes} · 🕊 ${Math.round(p.stats.negotiated)} · 🗡 ${p.stats.betrayals}</div>
@@ -351,7 +352,7 @@
     for (const a of arcs) {
       if (a.flare) continue;
       const to = a.to || centroids[a.toTerritory]; if (!to) continue;
-      ctx.beginPath(); gp({ type: 'LineString', coordinates: [a.from, to] });
+      ctx.beginPath(); gp({ type: 'LineString', coordinates: [(a.fromTerritory && centroids[a.fromTerritory]) || a.from, to] });
       ctx.strokeStyle = col(a.coalition); ctx.globalAlpha = 0.55; ctx.stroke(); ctx.globalAlpha = 1;
       if (!a.intercepted) { const [px, py] = proj(to); const g = ctx.createRadialGradient(px, py, 0, px, py, 10); g.addColorStop(0, 'rgba(255,240,180,0.9)'); g.addColorStop(1, 'rgba(255,90,31,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, 10, 0, 7); ctx.fill(); }
     }

@@ -7,7 +7,7 @@ for (let i = 0; i < N; i++) {
   const g = new Game('SIM' + i);
   const h = g.addPlayer('tester');
   g.removePlayer(h.id); // pure AI game
-  g.start();
+  g.start({ autoSummit: true });
   let peak = 0;
   while (g.phase !== 'over') {
     const r = g.resolve();

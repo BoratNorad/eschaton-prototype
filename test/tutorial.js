@@ -31,8 +31,16 @@ setTimeout(() => fail('timeout'), 60000);
   const S = () => w.ESCH.S;
   console.log('tutorial game:', S().me.coalition, 'turnSeconds', S().turnSeconds, 'players', S().players.length);
   await expect('WELCOME, COMMANDER'); next();
+  await expect('THE WORLD SUMMIT');
+  console.log('    summit:', S().phase, '| seat:', S().me.countryName, '| coalitions at the table:', d.querySelectorAll('.sm-card').length);
+  $('[data-sm-prop][data-kind="trade"]').click();
+  await expect('CLOSE THE SUMMIT');
+  await new Promise((r) => setTimeout(r, 2500)); // let AI leaders answer
+  console.log('    summit deals:', S().treaties.filter((t) => t.status === 'active').map((t) => `${t.kind}:${t.a}-${t.b}`).join(' ') || 'none yet');
+  $('#readyBtn').click();
   await expect('HOW YOU WIN'); next();
-  await expect('IT STARTS SMALL'); next();
+  await expect('ONE CRISIS, FOR NOW'); next();
+  console.log('    rail: active', d.querySelectorAll('#railBody .crisis').length, '| dormant', d.querySelectorAll('#railBody .rail-row.dormant').length);
   console.log('    active crises at start:', S().trigsits.filter((t) => t.status === 'active').map((t) => t.id).join(','), '| threat', S().tier);
   await expect('ESCALATION & THREAT LEVEL'); next();
   await expect('YOUR RESOURCES'); next();

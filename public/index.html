@@ -43,7 +43,7 @@
           <div id="lobbyNote" class="dim small"></div>
         </div>
       </div>
-      <p class="dim small">Pick a coalition (up to 3 commanders each). Empty slots are filled by AI at launch. Coalition-mates share territory income and coordinate.</p>
+      <p class="dim small">Pick the <b>country</b> you will lead. That puts you in its coalition (up to 3 leaders each). Coalition-mates share territory income; your own country pays you a bonus and is where your missiles launch from. Empty seats are filled by AI heads of state.</p>
       <div id="coalGrid" class="coal-grid"></div>
       <div id="unassigned" class="dim small"></div>
     </div>
@@ -56,6 +56,7 @@
       <div class="tb-block"><div class="dim">ROOM</div><div id="tbCode">-</div></div>
       <div class="tb-block"><div class="dim">TURN</div><div id="tbTurn">1</div></div>
       <div class="phases">
+        <div class="phase" data-ph="summit">⓪ SUMMIT</div>
         <div class="phase" data-ph="orders">① ORDERS</div>
         <div class="phase" data-ph="locked">② LOCKED</div>
         <div class="phase" data-ph="report">③ RESOLUTION</div>
@@ -71,19 +72,21 @@
     </header>
 
     <div id="main">
+      <aside id="rail"><div class="rail-head">TRIGSITS <a href="/trigsits.html" target="_blank" class="rail-link" title="Open the dossier archive">📁</a></div><div id="railBody"></div></aside>
       <div id="mapWrap">
         <svg id="map"></svg>
         <div id="scoreboard"></div>
         <div id="tooltip" class="hidden"></div>
         <div id="reportBox" class="hidden"></div>
         <div id="mapHint" class="dim small">Click a country or ⚠ TRIGSIT · scroll to zoom · drag to pan</div>
+        <button id="camBtn" class="btn tiny ghost" title="Re-center on the active crises">⌖ RECENTER</button>
+        <div id="summit" class="hidden"></div>
       </div>
 
       <aside id="side">
         <div id="resBar"></div>
         <nav id="tabs">
           <button data-tab="target" class="active">TARGET</button>
-          <button data-tab="crises">CRISES</button>
           <button data-tab="build">BUILD</button>
           <button data-tab="intel">INTEL</button>
           <button data-tab="diplo">TREATIES<span id="diploBadge" class="badge hidden">!</span></button>
@@ -91,7 +94,6 @@
         </nav>
         <div id="tabBody">
           <div class="tab" id="tab-target"></div>
-          <div class="tab hidden" id="tab-crises"></div>
           <div class="tab hidden" id="tab-build"></div>
           <div class="tab hidden" id="tab-intel"></div>
           <div class="tab hidden" id="tab-diplo"></div>
@@ -115,8 +117,9 @@
     <div class="modal">
       <h2>HOW TO PLAY <span class="dim">// 60-SECOND BRIEFING</span></h2>
       <ol>
-        <li><b>It starts small.</b> A few crises are live, and every coalition is in at least one. ⚠ markers are <b>TRIGSITs</b> (triggering situations). At first you can only deploy troops and negotiate at <b>your own</b> crises.</li>
-        <li><b>The game ends when no TRIGSIT is left active</b>: each is settled by negotiation, won militarily, or frozen when its timer runs out. But decisions <b>spill over</b>: defeats, nukes, betrayals and huge mobilizations ignite new crises.</li>
+        <li><b>Pick a country, then attend the World Summit.</b> Sign non-aggression pacts and trade agreements before anything goes wrong.</li>
+        <li><b>Then one crisis ignites.</b> ⚠ markers are <b>TRIGSITs</b> (triggering situations). For the first turns everything revolves around it: deploy, negotiate, mediate, or back a side. The rail on the left lists all 21.</li>
+        <li><b>The world widens.</b> Decisions <b>spill over</b> (defeats, nukes, betrayals, proxy aid, mobilization) and new crises ignite. The map zooms out and more options unlock. The game ends when no TRIGSIT is left active (after turn 8).</li>
         <li><b>Win</b> with the best <b>INDDIR / SUFDDIR</b> ratio: damage you inflict directly ÷ damage you suffer directly. Hit hard, get hit little.</li>
         <li><b>Each turn</b>, everyone secretly queues orders. Then all orders resolve at once. You get <b>3 actions</b> per turn (strike, spy, deploy, negotiate), plus unlimited builds you can afford.</li>
         <li><b>Resources:</b> IND (industry), URA (uranium) and INF (influence) come from your coalition's territories. Damaged land produces less.</li>

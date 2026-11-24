@@ -22,6 +22,7 @@
   let lastReportTurn = -1;
   let mapReady = false;
   let pendingReport = null;
+  let autoPicked = false;
 
   // ======================================================== screens
   const show = (id) => { for (const s of ['landing', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); };
@@ -129,11 +130,16 @@
         <h3>${c}</h3><div class="full">${esc(cc.full)}</div>
         <div class="abil"><b>${esc(cc.ability.name)}</b>: ${esc(cc.ability.desc)}</div>
         <div class="dim small">${esc(cc.history)}</div>
-        <div class="slots">${mem.map((p) => `<div class="slot ${p.id === myId ? 'you' : ''}">▸ ${esc(p.name)}${p.host ? ' ★' : ''}</div>`).join('') || '<div class="dim small">— AI controlled —</div>'}</div>
+        <div class="slots">${mem.map((p) => `<div class="slot ${p.id === myId ? 'you' : ''}">▸ ${esc(p.name)}${p.countryName ? ` <span class="dim">· ${esc(p.countryName)}</span>` : ''}${p.host ? ' ★' : ''}</div>`).join('') || '<div class="dim small">— AI controlled —</div>'}</div>
+        <select class="country-sel" data-country="${c}" ${!mine && mem.length >= C.maxPerCoalition ? 'disabled' : ''}>
+          <option value="">${mine && me?.country ? 'Change country…' : `Lead a country (${mem.length}/${C.maxPerCoalition})…`}</option>
+          ${(l.countries?.[c] || []).map((k) => `<option value="${k.id}" ${k.takenBy && k.id !== me?.country ? 'disabled' : ''} ${k.id === me?.country ? 'selected' : ''}>${esc(k.name)}${k.takenBy ? ` · ${esc(k.takenBy)}` : ''}</option>`).join('')}
+        </select>
         ${mine ? '<button class="btn small ghost" data-leave>LEAVE</button>'
-          : `<button class="btn small" data-join="${c}" ${mem.length >= C.maxPerCoalition ? 'disabled' : ''}>JOIN ${mem.length}/${C.maxPerCoalition}</button>`}
+          : `<button class="btn small" data-join="${c}" ${mem.length >= C.maxPerCoalition ? 'disabled' : ''}>JOIN (ANY COUNTRY)</button>`}
       </div>`;
     }).join('');
+    $$('[data-country]').forEach((s) => s.onchange = () => { if (s.value) socket.emit('setCountry', s.value); });
     $$('[data-join]').forEach((b) => b.onclick = () => socket.emit('setCoalition', b.dataset.join));
     $$('[data-leave]').forEach((b) => b.onclick = () => socket.emit('setCoalition', null));
     const un = l.players.filter((p) => !p.coalition);
@@ -147,6 +153,10 @@
     show('game');
     if (!mapReady) initMap();
     if (s.turn !== draftTurn) { draft = { builds: {}, actions: [] }; draftTurn = s.turn; }
+    if (!selected && !s.tutorial && s.phase === 'orders' && !autoPicked) {
+      const first = s.trigsits.find((t) => t.status === 'active');
+      if (first) { selected = { kind: 'trigsit', id: first.id }; autoPicked = true; }
+    }
     if (s.phase === 'orders') $('#reportBox').classList.add('hidden');
     if (first) { $('#tbCode').textContent = s.code; }
     renderAll();
@@ -162,7 +172,7 @@
 
   function renderAll() {
     if (!S) return;
-    renderTop(); renderRes(); renderScore(); renderMapState(); renderTab(); renderOrders(); renderLog();
+    renderTop(); renderRes(); renderScore(); renderMapState(); renderTab(); renderOrders(); renderLog(); renderRail(); renderSummit();
     const pending = S.treaties.some((t) => t.status === 'proposed' && t.b === S.me?.coalition);
     $('#diploBadge').classList.toggle('hidden', !pending);
     if (window.ESCH_onRender) window.ESCH_onRender();
@@ -171,6 +181,7 @@
   // ======================================================== top bar
   function phaseKey() {
     if (!S) return 'orders';
+    if (S.phase === 'summit') return 'summit';
     if (S.phase === 'report' || S.phase === 'over') return 'report';
     return S.me?.submitted ? 'locked' : 'orders';
   }
@@ -202,7 +213,7 @@
     $('#escBox').title = `Damage x${fmt(1 + e * C.strike.escalationDamageMult)} · auto-retaliation ${Math.round((C.strike.retaliationBase + e * C.strike.retaliationPerLevel) * 100)}% · strike cost TAC ${S.strikeCost.tactical} / STR ${S.strikeCost.strategic} INF`;
     if (S.me) {
       const cc = C.coalitions[S.me.coalition];
-      $('#meBadge').innerHTML = `<div style="--c:${cc.color}"><b>${S.me.coalition}</b></div><div class="dim small">${esc(S.me.name)} · ${esc(cc.ability.name)}</div>`;
+      $('#meBadge').innerHTML = `<div style="--c:${cc.color}"><b>${S.me.coalition}</b></div><div class="dim small">${esc(S.me.name)} · ${esc(S.me.countryName || '')} · ${esc(cc.ability.name)}</div>`;
     }
   }
   setInterval(() => {
@@ -211,6 +222,7 @@
     const el = $('#tbTimer');
     el.textContent = S.phase === 'over' ? '--' : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     $('.timer').classList.toggle('urgent', S.phase === 'orders' && left <= 10);
+    const st = $('#smTimer'); if (st) st.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
   }, 250);
 
   // ======================================================== resources / projections
@@ -250,6 +262,32 @@
 
   // ======================================================== map
   let svg, gRoot, gCountries, gTrig, gFx, path, projection, features = [], centroids = {}, zoomK = 1, mapZoom = null;
+  let knownActive = null, camSig = null;
+  function flare(lonlat) {
+    if (!gFx) return;
+    const [x, y] = projection(lonlat);
+    for (let k = 0; k < 3; k++) gFx.append('circle').attr('cx', x).attr('cy', y).attr('r', 2).style('fill', 'none').style('stroke', '#ff8a3d').style('stroke-width', 2.5).attr('filter', 'url(#glow)')
+      .transition().delay(600 + k * 420).duration(1500).attr('r', 40).style('opacity', 0).remove();
+  }
+  // Camera: world view during the summit; afterwards fit every active crisis (zooms OUT as the world widens).
+  function autoCamera(force) {
+    if (!mapZoom || !S) return;
+    const act = S.trigsits.filter((t) => t.status === 'active');
+    const sig = S.phase === 'summit' ? 'summit' : act.map((t) => t.id).sort().join(',');
+    if (!force && sig === camSig) return;
+    camSig = sig;
+    const { width: W, height: H } = mapZoom;
+    let t = d3.zoomIdentity;
+    if (S.phase !== 'summit' && act.length) {
+      const pts = act.map((x) => projection(x.lonlat));
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      const pad = 90, bw = Math.max(...xs) - Math.min(...xs), bh = Math.max(...ys) - Math.min(...ys);
+      const k = Math.max(1, Math.min(4, Math.min(W / (bw + pad * 2), H / (bh + pad * 2))));
+      const cx = (Math.max(...xs) + Math.min(...xs)) / 2, cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+      t = d3.zoomIdentity.translate(W / 2 - cx * k, H / 2 - cy * k).scale(k);
+    }
+    svg.transition().duration(1400).ease(d3.easeCubicInOut).call(mapZoom.zoom.transform, t);
+  }
   function flyTo(lonlat) {
     if (!mapZoom) return;
     const [x, y] = projection(lonlat), k = 3;
@@ -314,6 +352,7 @@
     });
     svg.call(zoom).on('dblclick.zoom', null);
     mapZoom = { zoom, width, height };
+    $('#camBtn').onclick = () => autoCamera(true);
     renderMapState();
   }
 
@@ -336,6 +375,12 @@
       return e;
     });
     g.style('display', (d) => (d.status === 'dormant' ? 'none' : null));
+    // flare every crisis that just ignited, then let the camera widen to fit the world's active fronts
+    const activeNow = S.trigsits.filter((t) => t.status === 'active');
+    if (knownActive) for (const t of activeNow) if (!knownActive.has(t.id)) flare(t.lonlat);
+    if (!knownActive && S.phase === 'orders' && S.turn <= 1) activeNow.forEach((t) => flare(t.lonlat));
+    knownActive = new Set(S.trigsits.filter((t) => t.status !== 'dormant').map((t) => t.id));
+    autoCamera();
     g.attr('class', (d) => `trig ${d.status}${selected?.kind === 'trigsit' && selected.id === d.id ? ' selected' : ''}${d.sides.includes(S.me?.coalition) ? ' mine' : ''}`)
       .attr('transform', (d) => `translate(${projection(d.lonlat)}) scale(${1 / Math.sqrt(zoomK)})`);
     trigLabels();
@@ -350,13 +395,8 @@
     if (!gFx || !anims?.length) return;
     let hitMe = false;
     anims.slice(0, 120).forEach((a, i) => {
-      if (a.flare) {
-        const [x, y] = projection(a.to);
-        for (let k = 0; k < 3; k++) gFx.append('circle').attr('cx', x).attr('cy', y).attr('r', 2).style('fill', 'none').style('stroke', '#ff8a3d').style('stroke-width', 2).attr('filter', 'url(#glow)')
-          .transition().delay(Math.min(i * 280, 5000) + k * 350).duration(1400).attr('r', 34).style('opacity', 0).remove();
-        return;
-      }
-      const from = a.from, to = targetPoint(a);
+      if (a.flare) return; // ignitions are flared by renderMapState when the crisis appears
+      const from = (a.fromTerritory && centroids[a.fromTerritory]) || a.from, to = targetPoint(a);
       const delay = Math.min(i * 280, 5000);
       const p = gFx.append('path').attr('class', 'missile').attr('d', path({ type: 'LineString', coordinates: [from, to] }))
         .style('stroke', col(a.coalition)).attr('filter', 'url(#glow)');
@@ -405,7 +445,6 @@
   function renderTab() {
     if (!S) return;
     if (tab === 'target') renderTarget();
-    if (tab === 'crises') renderCrises();
     if (tab === 'build') renderBuild();
     if (tab === 'intel') renderIntel();
     if (tab === 'diplo') renderDiplo();
@@ -448,7 +487,7 @@
   function renderTarget() {
     const el = $('#tab-target');
     if (!selected) {
-      el.innerHTML = `<h3>NO TARGET</h3><p class="note">Click a country to inspect or strike it. Click a ⚠ TRIGSIT marker to deploy forces, negotiate, or nuke enemy divisions there.</p>
+      el.innerHTML = `<h3>NO TARGET</h3><p class="note">Pick a crisis in the <b>TRIGSITS</b> rail on the left (or a ⚠ marker on the map) to see your options. Click a country to inspect it.</p>
         <h4>ACTIVE TRIGSITs</h4>` + S.trigsits.filter((t) => t.status === 'active').map((t) =>
         `<div class="kv" style="cursor:pointer" data-trig="${t.id}"><span>⚠ ${t.name}</span><span>${t.sides.map((s) => `<span style="color:${col(s)}">${s}</span>`).join(' vs ')} · ${t.turnsLeft}t</span></div>`).join('');
       el.querySelectorAll('[data-trig]').forEach((d) => d.onclick = () => select({ kind: 'trigsit', id: d.dataset.trig }));
@@ -484,40 +523,52 @@
       }
       return;
     }
-    // trigsit
+    // trigsit: response options
     const t = S.trigsits.find((x) => x.id === selected.id);
     if (!t) return;
+    const info = C.trigsits.find((x) => x.id === t.id) || {};
     const [A, B] = t.sides;
+    if (t.status === 'dormant') {
+      el.innerHTML = `<h3 class="dim">🔒 ${esc(t.name)}</h3><div class="dim small">DORMANT TRIGSIT · ${info.year || ''} · <span style="color:${col(A)}">${A}</span> vs <span style="color:${col(B)}">${B}</span></div>
+        <p class="td-blurb">${esc(info.blurb || '')}</p>
+        <p class="note">This crisis hasn't ignited. It can be set off by <b>spillover</b> (a defeat, a nuke, a broken pact, proxy aid, a burned spy, mass mobilization) or simply when tensions elsewhere boil over.</p>`;
+      return;
+    }
     const party = t.sides.includes(S.me.coalition);
     const enemy = party ? t.sides.find((s) => s !== S.me.coalition) : null;
     const ctl = t.control / C.trigsit.winThreshold; // + favors A
-    el.innerHTML = `<h3 style="color:var(--amber)">⚠ ${t.name}</h3>
-      <div class="dim small">TRIGSIT · ${t.status === 'active' ? `${t.turnsLeft} turns until frozen` : `RESOLVED: ${t.how}${t.winner ? ' — ' + t.winner + ' victory' : ''}`}</div>
-      <h4>MILITARY CONTROL</h4>
+    const opt = (icon, title, desc, body, cls = '') => `<div class="opt ${cls}"><div class="opt-t">${icon} ${title}</div><div class="opt-d">${desc}</div>${body}</div>`;
+    const T = C.trigsit;
+    el.innerHTML = `<h3 style="color:var(--amber)">⚠ ${esc(t.name)}</h3>
+      <div class="dim small">${info.year || ''} · ${t.status === 'active' ? `${t.turnsLeft} turns until it freezes` : `RESOLVED: ${t.how}${t.winner ? ' — ' + t.winner + ' victory' : ''}`}${party ? ' · <span style="color:var(--green)">YOU ARE A PARTY</span>' : ''}</div>
+      <p class="td-blurb">${esc(info.blurb || '')}</p>
       <div class="tug-l"><span style="color:${col(A)}">${A} · ${t.forces[A]} div</span><span style="color:${col(B)}">${t.forces[B]} div · ${B}</span></div>
       <div class="tug"><span class="mid"></span>${ctl >= 0 ? `<i style="left:${50 - ctl * 50}%;width:${ctl * 50}%;background:${col(A)}"></i>` : `<i style="left:50%;width:${-ctl * 50}%;background:${col(B)}"></i>`}</div>
-      <p class="note">Net divisions × ${C.trigsit.progressPerForce} shifts control each turn. Reaching either end wins it.</p>
-      <h4>NEGOTIATION</h4>
+      <div class="kv small"><span>🕊 Peace</span><span>${Math.round(t.peace)} / ${T.peaceThreshold}</span></div>
       <div class="hpbar" style="--c:#79d9a8"><i style="width:${t.peace}%"></i></div>
-      <div class="kv"><span>Peace progress</span><span>${Math.round(t.peace)} / ${C.trigsit.peaceThreshold}</span></div>
-      ${t.status !== 'active' ? '' : `
-      <div class="actrow"><input type="number" id="negAmt" min="1" value="${Math.max(1, Math.min(10, Math.floor(av.inf)))}" /> <button class="btn green" id="negBtn" ${av.actions < 1 ? 'disabled' : ''}>🕊 NEGOTIATE (INF)</button></div>
-      <p class="note">Anyone can mediate. Each INF adds ${C.trigsit.peacePerInfluence}%${C.coalitions[S.me.coalition].ability.id === 'nonaligned' ? ' ×2 (Non-Aligned)' : ''}. Negotiators share the peace dividend.</p>
-      ${party ? `
-      <h4>FORCES (${S.me.coalition})</h4>
-      <div class="kv"><span>Your divisions here</span><span>${t.mine}</span></div>
-      <div class="actrow"><input type="number" id="comAmt" min="1" max="${av.conv}" value="${Math.max(1, Math.min(av.conv, 3))}" /> <button class="btn" id="comBtn" ${av.conv < 1 || av.actions < 1 ? 'disabled' : ''}>DEPLOY DIVISIONS</button> <span class="small dim">${av.conv} available</span></div>
-      ${t.mine ? `<div class="actrow"><button class="btn small ghost" id="wdBtn" ${av.actions < 1 ? 'disabled' : ''}>WITHDRAW ALL</button></div>` : ''}
-      <div class="actrow"><button class="btn danger" id="tnBtn" ${av.tactical < 1 || av.actions < 1 || av.inf < S.strikeCost.tactical || !t.forces[enemy] ? 'disabled' : ''}>☢ NUKE ${enemy} FORCES</button>
-        <span class="small">kills ${Math.round(C.strike.tactical.trigsitKillPct * 100)}% · ${S.strikeCost.tactical} INF</span></div>` :
-        '<p class="note">You are not a party to this crisis, but you can mediate.</p>'}`}`;
+      ${t.status !== 'active' ? '' : `<h4>YOUR OPTIONS · ${av.actions} action${av.actions === 1 ? '' : 's'} left</h4><div class="opt-grid">` +
+        (party ? opt('⚔', 'DEPLOY DIVISIONS', `More divisions than ${enemy} pulls the control bar your way (×${T.progressPerForce}/turn). Win it outright at the end of the bar. Fighting raises escalation.`,
+          `<div class="actrow"><input type="number" id="comAmt" min="1" max="${av.conv}" value="${Math.max(1, Math.min(av.conv, 3))}" /> <button class="btn" id="comBtn" ${av.conv < 1 || av.actions < 1 ? 'disabled' : ''}>DEPLOY</button> <span class="small dim">${av.conv} avail · ${t.mine} here</span></div>`) : '') +
+        opt('🕊', party ? 'NEGOTIATE' : 'MEDIATE', `Spend influence: +${T.peacePerInfluence}% peace per INF${C.coalitions[S.me.coalition].ability.id === 'nonaligned' ? ' ×2 (Non-Aligned)' : ''}. At 100% the crisis is settled, escalation drops, and negotiators share a dividend.`,
+          `<div class="actrow"><input type="number" id="negAmt" min="1" value="${Math.max(1, Math.min(10, Math.floor(av.inf)))}" /> <button class="btn green" id="negBtn" ${av.actions < 1 ? 'disabled' : ''}>NEGOTIATE</button> <span class="small dim">${Math.floor(av.inf)} INF</span></div>`) +
+        (!party ? opt('🤝', 'BACK A SIDE', `Ship industrial aid (IND) to one side: each IND pushes control ${T.supportPerInd}. It's a proxy war, and it may drag <b>you</b> into a direct crisis with the other side.`,
+          `<div class="actrow"><select id="supSide"><option value="${A}">${A}</option><option value="${B}">${B}</option></select><input type="number" id="supAmt" min="1" max="${T.supportMaxPerOrder}" value="${Math.max(1, Math.min(5, Math.floor(S.me.res.ind)))}" /> <button class="btn" id="supBtn" ${av.actions < 1 ? 'disabled' : ''}>SEND AID</button></div>`) : '') +
+        (party && t.mine ? opt('↩', 'WITHDRAW', 'Pull all your divisions back home. Cools things down, but cedes the ground.',
+          `<div class="actrow"><button class="btn small ghost" id="wdBtn" ${av.actions < 1 ? 'disabled' : ''}>WITHDRAW ALL</button></div>`) : '') +
+        (party ? opt('☢', `NUKE ${enemy} DIVISIONS`, `A tactical warhead on the enemy's troops here: kills ${Math.round(C.strike.tactical.trigsitKillPct * 100)}%. Big escalation, may trigger retaliation.`,
+          `<div class="actrow"><button class="btn danger" id="tnBtn" ${av.tactical < 1 || av.actions < 1 || av.inf < S.strikeCost.tactical || !t.forces[enemy] ? 'disabled' : ''}>☢ LAUNCH</button> <span class="small">${S.strikeCost.tactical} INF · ${av.tactical} warheads</span></div>`, 'danger') : '') +
+        `</div><p class="note">More options (spies, homeland strikes, strategic weapons) unlock as the threat level rises.</p>`}`;
     if (t.status !== 'active') return;
-    if (!party && !S.caps?.negotiateAny) applyLock($('#negBtn'), `🔒 Mediating crises you're not in unlocks at THREAT LEVEL 2: ${tierName(2)}`);
     if (party && !S.caps?.nukeTrigsit) applyLock($('#tnBtn'), lockTxt(3));
     $('#negBtn').onclick = () => {
       const n = Math.floor(Number($('#negAmt').value));
       if (!(n > 0) || n > av.inf) return toast('Not enough influence.');
       addAction({ type: 'negotiate', trigsit: t.id, amount: n, label: t.name });
+    };
+    if ($('#supBtn')) $('#supBtn').onclick = () => {
+      const n = Math.floor(Number($('#supAmt').value));
+      if (!(n > 0) || n > S.me.res.ind) return toast('Not enough industry.');
+      addAction({ type: 'support', trigsit: t.id, side: $('#supSide').value, amount: Math.min(n, T.supportMaxPerOrder), label: `${$('#supSide').value} @ ${t.name}` });
     };
     if (party) {
       $('#comBtn').onclick = () => {
@@ -530,33 +581,68 @@
     }
   }
 
-  let crisesFilter = 'mine';
-  function renderCrises() {
-    const el = $('#tab-crises');
-    const me = S.me.coalition;
-    const dormant = S.trigsits.filter((t) => t.status === 'dormant').length;
-    const list = S.trigsits.filter((t) => t.status !== 'dormant').filter((t) => crisesFilter === 'all' || (crisesFilter === 'mine' ? t.sides.includes(me) : t.status === 'active'))
-      .sort((a, b) => (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1) || a.turnsLeft - b.turnsLeft);
-    const active = S.trigsits.filter((t) => t.status === 'active').length;
-    el.innerHTML = `<h3>CRISES</h3><p class="note">${active} active TRIGSIT${active === 1 ? '' : 's'}. The game ends when none are left active. <span class="spill-note">🔥 ${dormant} dormant crises can still ignite through spillover.</span> Click one to fly there.</p>
-      <div class="chips">${[['mine', `MY ${me}`], ['active', 'ACTIVE'], ['all', 'ALL']].map(([k, l]) => `<button class="chip ${crisesFilter === k ? 'on' : ''}" data-cf="${k}">${l}</button>`).join('')}
-        <a class="chip" href="/trigsits.html" target="_blank">📁 DOSSIERS</a></div>` +
-      list.map((t) => {
-        const [A, B] = t.sides, ctl = t.control / C.trigsit.winThreshold;
-        const bar = ctl >= 0 ? `<i style="left:${50 - ctl * 50}%;width:${ctl * 50}%;background:${col(A)}"></i>` : `<i style="left:50%;width:${-ctl * 50}%;background:${col(B)}"></i>`;
-        const status = t.status === 'active' ? `${t.turnsLeft}t left` : t.how === 'peace' ? '🕊 PEACE' : t.how === 'military' ? `⚔ ${t.winner}` : '⌛ FROZEN';
-        return `<div class="crisis ${t.status}${t.sides.includes(me) ? ' mine' : ''}" data-cr="${t.id}">
-          <div class="cr-top"><b>⚠ ${esc(t.name)}</b><span>${status}</span></div>
-          <div class="cr-sides"><span style="color:${col(A)}">${A} ${t.forces[A]}div</span><span class="dim">🕊 ${Math.round(t.peace)}%</span><span style="color:${col(B)}">${t.forces[B]}div ${B}</span></div>
-          ${t.status === 'active' ? `<div class="tug small-tug"><span class="mid"></span>${bar}</div>` : ''}
-          ${t.mine ? `<div class="small" style="color:var(--green)">your divisions here: ${t.mine}</div>` : ''}
-        </div>`;
-      }).join('');
-    el.querySelectorAll('[data-cf]').forEach((b) => b.onclick = () => { crisesFilter = b.dataset.cf; renderCrises(); });
+  // ======================================================== TRIGSIT rail (left)
+  function renderRail() {
+    const el = $('#railBody');
+    if (!el || !S) return;
+    const me = S.me?.coalition;
+    const by = (s) => S.trigsits.filter((t) => t.status === s);
+    const act = by('active').sort((a, b) => (b.sides.includes(me) ? 1 : 0) - (a.sides.includes(me) ? 1 : 0) || a.turnsLeft - b.turnsLeft);
+    const sel = (t) => (selected?.kind === 'trigsit' && selected.id === t.id ? ' focus' : '');
+    const card = (t) => {
+      const [A, B] = t.sides, ctl = t.control / C.trigsit.winThreshold;
+      const bar = ctl >= 0 ? `<i style="left:${50 - ctl * 50}%;width:${ctl * 50}%;background:${col(A)}"></i>` : `<i style="left:50%;width:${-ctl * 50}%;background:${col(B)}"></i>`;
+      return `<div class="crisis active${t.sides.includes(me) ? ' mine' : ''}${sel(t)}" data-cr="${t.id}">
+        <div class="cr-top"><b>⚠ ${esc(t.name)}</b><span>${t.turnsLeft}t</span></div>
+        <div class="cr-sides"><span style="color:${col(A)}">${A} ${t.forces[A]}</span><span class="dim">🕊${Math.round(t.peace)}%</span><span style="color:${col(B)}">${t.forces[B]} ${B}</span></div>
+        <div class="tug small-tug"><span class="mid"></span>${bar}</div></div>`;
+    };
+    const res = by('resolved'), dor = by('dormant');
+    el.innerHTML = (S.phase === 'summit' ? `<div class="rail-note">The summit is in session. No crisis has ignited yet.</div>` : '') +
+      `<div class="rail-sec">ACTIVE · ${act.length}</div>` + (act.map(card).join('') || '<div class="rail-note">None right now.</div>') +
+      (res.length ? `<div class="rail-sec">RESOLVED · ${res.length}</div>` + res.map((t) => `<div class="rail-row${sel(t)}" data-cr="${t.id}">${t.how === 'peace' ? '🕊' : t.how === 'military' ? '⚔' : '⌛'} ${esc(t.name)}<span>${t.how === 'military' ? t.winner : t.how === 'peace' ? 'peace' : 'frozen'}</span></div>`).join('') : '') +
+      `<div class="rail-sec">DORMANT · ${dor.length} <span class="dim">(could ignite)</span></div>` +
+      dor.map((t) => `<div class="rail-row dormant${t.sides.includes(me) ? ' mine' : ''}${sel(t)}" data-cr="${t.id}">🔒 ${esc(t.name)}<span><span style="color:${col(t.sides[0])}">${t.sides[0].slice(0, 3)}</span>·<span style="color:${col(t.sides[1])}">${t.sides[1].slice(0, 3)}</span></span></div>`).join('');
     el.querySelectorAll('[data-cr]').forEach((d) => d.onclick = () => {
       const t = S.trigsits.find((x) => x.id === d.dataset.cr);
-      select({ kind: 'trigsit', id: t.id }); flyTo(t.lonlat);
+      select({ kind: 'trigsit', id: t.id }); if (t.status !== 'dormant') flyTo(t.lonlat);
     });
+  }
+
+  // ======================================================== WORLD SUMMIT (turn 0)
+  function renderSummit() {
+    const box = $('#summit');
+    if (!S || S.phase !== 'summit') { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    const me = S.me.coalition, tr = S.treaties;
+    const deal = (c, kind) => tr.find((t) => (t.kind || 'nap') === kind && ['proposed', 'active'].includes(t.status) && ((t.a === me && t.b === c) || (t.a === c && t.b === me)));
+    const cell = (c, kind) => {
+      const d = deal(c, kind), label = kind === 'trade' ? '💱 TRADE' : '🤝 NAP';
+      if (!d) return `<button class="btn tiny" data-sm-prop="${c}" data-kind="${kind}">${label}</button>`;
+      if (d.status === 'active') return `<span class="sm-ok">${label} ✔ SIGNED</span>`;
+      if (d.a === me) return `<span class="dim">${label} ⏳ offered</span>`;
+      return `<span class="sm-in">${label} ✉ <button class="btn tiny green" data-sm-acc="${d.id}">ACCEPT</button><button class="btn tiny danger" data-sm-rej="${d.id}">✕</button></span>`;
+    };
+    const humans = S.players.filter((p) => !p.isAI && p.connected), ready = humans.filter((p) => p.ready).length;
+    const feed = S.log.filter((e) => e.turn === 0 && e.cls === 'treaty').slice(-7).reverse();
+    box.innerHTML = `<div class="summit-box">
+      <div class="sm-head"><div><div class="dim small">TURN 0 · BEFORE THE FIRST CRISIS</div><h2>🌐 WORLD SUMMIT</h2></div><div class="sm-timer"><div class="dim small">CLOSES IN</div><div id="smTimer">--</div></div></div>
+      <p class="sm-intro">The heads of state meet before anything goes wrong. Sign <b>🤝 non-aggression pacts</b> (striking a partner breaks one publicly and ignites your shared crisis) and <b>💱 trade agreements</b> (+${C.treaty.tradeBonus.ind} IND +${C.treaty.tradeBonus.inf} INF every turn for every member of both coalitions). When every leader is READY, or time runs out, <b>the first TRIGSIT ignites.</b></p>
+      <div class="sm-you" style="--c:${col(me)}">You lead <b>${esc(S.me.countryName || '')}</b> for <b style="color:${col(me)}">${me}</b> · trade deals signed: ${S.me.tradeDeals || 0}</div>
+      <div class="sm-grid">${COALS.filter((c) => c !== me).map((c) => {
+        const cc = C.coalitions[c], mem = S.players.filter((p) => p.coalition === c);
+        return `<div class="sm-card" style="--c:${cc.color}"><div class="sm-n">${c}</div><div class="dim small">${esc(cc.full)}</div>
+          <div class="sm-leaders">${mem.map((p) => `${esc(p.title ? p.title + ' ' : '')}${esc(p.name)} <span class="dim">(${esc(p.countryName || '?')})</span>`).join('<br>')}</div>
+          <div class="sm-ab">◆ ${esc(cc.ability.name)}</div>
+          <div class="sm-deals">${cell(c, 'nap')}${cell(c, 'trade')}</div></div>`;
+      }).join('')}</div>
+      <div class="sm-foot"><div class="sm-feed">${feed.map((e) => `<div class="le treaty">${esc(e.text)}</div>`).join('') || '<div class="dim small">No offers yet. Make the first move.</div>'}</div>
+        <div class="sm-ready"><button id="readyBtn" class="btn ${S.me.ready ? 'ghost' : 'primary'}">${S.me.ready ? '✔ READY (click to undo)' : 'READY — IGNITE THE FIRST CRISIS'}</button><div class="dim small">${ready}/${humans.length} human leader(s) ready</div></div></div>
+    </div>`;
+    box.querySelectorAll('[data-sm-prop]').forEach((b) => b.onclick = () => socket.emit('treaty:propose', { target: b.dataset.smProp, kind: b.dataset.kind }));
+    box.querySelectorAll('[data-sm-acc]').forEach((b) => b.onclick = () => socket.emit('treaty:respond', { id: b.dataset.smAcc, accept: true }));
+    box.querySelectorAll('[data-sm-rej]').forEach((b) => b.onclick = () => socket.emit('treaty:respond', { id: b.dataset.smRej, accept: false }));
+    $('#readyBtn').onclick = () => socket.emit('ready', !S.me.ready);
   }
 
   function costStr(c) { return Object.entries(c).map(([k, v]) => `${v} ${k.toUpperCase()}`).join(' + '); }
@@ -619,22 +705,25 @@
     const outgoing = tr.filter((t) => t.status === 'proposed' && t.a === me);
     const active = tr.filter((t) => t.status === 'active' && (t.a === me || t.b === me));
     const broken = tr.filter((t) => t.status === 'broken').slice(-6);
-    const busy = new Set([...active, ...incoming, ...outgoing].map(partner));
-    el.innerHTML = `<h3>TREATIES</h3><p class="note">Non-aggression pacts act instantly (no action cost). Any member of the receiving coalition can accept. Breaking one, or nuking a partner, is announced to everyone: +${C.escalation.treatyBreak} escalation, −${C.treaty.breakInfPenalty} INF.</p>
-      ${incoming.length ? '<h4>INCOMING OFFERS</h4>' + incoming.map((t) => `<div class="treaty"><span>NAP from <b style="color:${col(t.a)}">${t.a}</b> <span class="dim small">by ${esc(t.by)}</span></span>
+    const busy = new Set([...active, ...incoming, ...outgoing].map((t) => partner(t) + ':' + (t.kind || 'nap')));
+    const K = (t) => (t.kind === 'trade' ? '💱 TRADE' : '🤝 NAP');
+    el.innerHTML = `<h3>TREATIES</h3><p class="note">Deals act instantly (no action cost). <b>Non-aggression pacts</b>: breaking one, or nuking a partner, is announced to everyone (+${C.escalation.treatyBreak} escalation, −${C.treaty.breakInfPenalty} INF) and ignites your shared crisis. <b>Trade agreements</b>: +${C.treaty.tradeBonus.ind} IND +${C.treaty.tradeBonus.inf} INF per turn for every member of both coalitions, cancelled by a nuclear strike between you. You have ${S.me.tradeDeals || 0} trade deal(s).</p>
+      ${incoming.length ? '<h4>INCOMING OFFERS</h4>' + incoming.map((t) => `<div class="treaty"><span>${K(t)} from <b style="color:${col(t.a)}">${t.a}</b> <span class="dim small">by ${esc(t.by)}</span></span>
         <span><button class="btn tiny green" data-acc="${t.id}">ACCEPT</button> <button class="btn tiny danger" data-rej="${t.id}">REJECT</button></span></div>`).join('') : ''}
-      <h4>ACTIVE PACTS</h4>${active.map((t) => `<div class="treaty active"><span>⟷ <b style="color:${col(partner(t))}">${partner(t)}</b></span><button class="btn tiny danger" data-brk="${t.id}">BREAK</button></div>`).join('') || '<div class="note">None.</div>'}
-      ${outgoing.length ? '<h4>AWAITING REPLY</h4>' + outgoing.map((t) => `<div class="treaty"><span>→ ${t.b}</span><span class="dim small">pending</span></div>`).join('') : ''}
-      <h4>PROPOSE NON-AGGRESSION PACT</h4>` +
-      COALS.filter((c) => c !== me).map((c) => `<div class="treaty"><b style="color:${col(c)}">${c}</b><button class="btn tiny" data-prop="${c}" ${busy.has(c) ? 'disabled' : ''}>PROPOSE</button></div>`).join('') +
+      <h4>ACTIVE AGREEMENTS</h4>${active.map((t) => `<div class="treaty active"><span>${K(t)} ⟷ <b style="color:${col(partner(t))}">${partner(t)}</b></span><button class="btn tiny danger" data-brk="${t.id}" data-kind="${t.kind || 'nap'}">${t.kind === 'trade' ? 'CANCEL' : 'BREAK'}</button></div>`).join('') || '<div class="note">None.</div>'}
+      ${outgoing.length ? '<h4>AWAITING REPLY</h4>' + outgoing.map((t) => `<div class="treaty"><span>${K(t)} → ${t.b}</span><span class="dim small">pending</span></div>`).join('') : ''}
+      <h4>PROPOSE</h4>` +
+      COALS.filter((c) => c !== me).map((c) => `<div class="treaty"><b style="color:${col(c)}">${c}</b><span>
+        <button class="btn tiny" data-prop="${c}" data-kind="nap" ${busy.has(c + ':nap') ? 'disabled' : ''}>🤝 NAP</button>
+        <button class="btn tiny" data-prop="${c}" data-kind="trade" ${busy.has(c + ':trade') ? 'disabled' : ''}>💱 TRADE</button></span></div>`).join('') +
       (broken.length ? '<h4>BROKEN PACTS (PUBLIC RECORD)</h4>' + broken.map((t) => `<div class="treaty broken"><span>${t.a} ⟷ ${t.b}</span><span class="small warn">broken by ${t.brokenBy}</span></div>`).join('') : '');
     if (!S.caps?.treatyAny) el.querySelectorAll('[data-prop]').forEach((b) => {
       if (!adv().has(b.dataset.prop)) { b.disabled = true; b.textContent = '🔒 L2'; b.title = `Pacts with coalitions you don't face in a crisis unlock at THREAT LEVEL 2: ${tierName(2)}`; }
     });
-    el.querySelectorAll('[data-prop]').forEach((b) => b.onclick = () => socket.emit('treaty:propose', b.dataset.prop));
+    el.querySelectorAll('[data-prop]').forEach((b) => b.onclick = () => socket.emit('treaty:propose', { target: b.dataset.prop, kind: b.dataset.kind || 'nap' }));
     el.querySelectorAll('[data-acc]').forEach((b) => b.onclick = () => socket.emit('treaty:respond', { id: b.dataset.acc, accept: true }));
     el.querySelectorAll('[data-rej]').forEach((b) => b.onclick = () => socket.emit('treaty:respond', { id: b.dataset.rej, accept: false }));
-    el.querySelectorAll('[data-brk]').forEach((b) => b.onclick = () => { if (confirm('Break this pact? The whole world will know.')) socket.emit('treaty:break', b.dataset.brk); });
+    el.querySelectorAll('[data-brk]').forEach((b) => b.onclick = () => { if (confirm(b.dataset.kind === 'trade' ? 'Cancel this trade agreement?' : 'Break this pact? The whole world will know.')) socket.emit('treaty:break', b.dataset.brk); });
   }
 
   // ======================================================== orders box
@@ -658,7 +747,7 @@
         ? (submitted
           ? `<button id="submitBtn" class="btn ghost">REVISE ORDERS</button><div class="locked-msg">ORDERS LOCKED · waiting on ${waiting} commander(s)</div>`
           : `<button id="submitBtn" class="btn primary">SUBMIT ORDERS</button>`)
-        : `<div class="locked-msg">${S.phase === 'over' ? 'GAME OVER' : 'RESOLVING… next turn shortly'}</div>`);
+        : `<div class="locked-msg">${S.phase === 'over' ? 'GAME OVER' : S.phase === 'summit' ? '🌐 WORLD SUMMIT IN SESSION' : 'RESOLVING… next turn shortly'}</div>`);
     el.querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { draft.actions.splice(Number(b.dataset.rm), 1); renderAll(); });
     const sb = $('#submitBtn');
     if (sb) sb.onclick = () => {
@@ -706,7 +795,7 @@
     const sel = $('#chatTo'); const cur = sel.value;
     const others = (S?.players || []).filter((p) => !p.isAI && p.id !== myId);
     sel.innerHTML = `<option value="all">ALL</option><option value="coalition">COALITION</option>` +
-      others.map((p) => `<option value="${p.id}">PM ${esc(p.name)} (${p.coalition})</option>`).join('');
+      others.map((p) => `<option value="${p.id}">PM ${esc(p.name)} (${esc(p.countryName || p.coalition)})</option>`).join('');
     if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
   }
   const sendChat = () => {

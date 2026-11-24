@@ -73,6 +73,18 @@ function orders(game, p) {
     }
   }
 
+  // 2b. Crises we're not in: back a friend (proxy war) or mediate
+  const outside = game.trigsits.filter((t) => t.status === 'active' && !t.sides.includes(my)).sort(() => rnd() - 0.5)[0];
+  if (outside && actions.length < CONFIG.actionsPerTurn) {
+    const friend = outside.sides.find((s) => game.activeTreaty(my, s, 'trade') || game.activeTreaty(my, s)) || outside.sides[rnd() < 0.5 ? 0 : 1];
+    if (res.ind >= 8 && rnd() < (0.15 + 0.35 * T.aggression) / size) {
+      const amt = Math.min(CONFIG.trigsit.supportMaxPerOrder, Math.floor(res.ind * 0.3));
+      add({ type: 'support', trigsit: outside.id, side: friend, amount: amt }); res.ind -= amt;
+    } else if (inf > 8 && rnd() < (0.15 + 0.4 * T.diplomacy) / size) {
+      const amt = Math.floor(inf * 0.3); add({ type: 'negotiate', trigsit: outside.id, amount: amt }); inf -= amt;
+    }
+  }
+
   // 3. Doves mediate other conflicts when the world heats up
   if (esc >= 4 - T.diplomacy * 2 && inf > 10 && rnd() < (0.3 * T.diplomacy) / size) {
     const tr = pick(game.trigsits.filter((t) => t.status === 'active'));
@@ -121,20 +133,42 @@ function orders(game, p) {
   return { builds, actions };
 }
 
-// Called once per resolution: AI responds to pending pacts and sometimes proposes.
-function diplomacy(game) {
-  const coals = Object.keys(CONFIG.coalitions);
-  const leader = (mem) => pick(mem.filter((p) => p.isAI)) || mem[0];
+const leader = (mem) => pick(mem.filter((p) => p.isAI)) || mem[0];
+
+// AI coalitions answer offers addressed to them (after `minAgeMs`, so it feels like deliberation).
+function respond(game, minAgeMs = 0) {
+  let changed = false;
   for (const t of game.treaties) {
-    if (t.status !== 'proposed') continue;
+    if (t.status !== 'proposed' || Date.now() - (t.created || 0) < minAgeMs) continue;
     const mem = game.coalitionMembers(t.b);
     if (mem.some((p) => !p.isAI)) continue; // humans decide for their coalition
     const L = leader(mem);
     const d = L?.persona?.traits?.diplomacy ?? 0.5;
     const adversaries = game.trigsits.some((tr) => tr.status === 'active' && tr.sides.includes(t.a) && tr.sides.includes(t.b));
-    const accept = rnd() < A.treatyAcceptChance * (0.4 + d) * (adversaries ? 0.4 : 1);
-    if (L) game.respondTreaty(L.id, t.id, accept);
+    const base = t.kind === 'trade' ? A.tradeAcceptChance : A.treatyAcceptChance;
+    const accept = rnd() < base * (0.4 + d) * (adversaries ? 0.4 : 1);
+    if (L && game.respondTreaty(L.id, t.id, accept)) changed = true;
   }
+  return changed;
+}
+
+// World summit: each all-AI coalition opens with a couple of offers.
+function summit(game) {
+  const coals = Object.keys(CONFIG.coalitions);
+  for (const c of coals) {
+    const mem = game.coalitionMembers(c);
+    if (!mem.length || mem.some((p) => !p.isAI)) continue;
+    const L = leader(mem);
+    const d = L?.persona?.traits?.diplomacy ?? 0.5;
+    const n = 1 + (rnd() < d ? 1 : 0);
+    for (let i = 0; i < n; i++) game.proposeTreaty(L.id, pick(coals.filter((x) => x !== c)), rnd() < 0.6 ? 'trade' : 'nap');
+  }
+}
+
+// Called once per resolution: AI responds to pending pacts and sometimes proposes.
+function diplomacy(game) {
+  const coals = Object.keys(CONFIG.coalitions);
+  respond(game, 0);
   for (const c of coals) {
     const mem = game.coalitionMembers(c);
     if (!mem.length || mem.some((p) => !p.isAI)) continue;
@@ -142,8 +176,8 @@ function diplomacy(game) {
     const d = L?.persona?.traits?.diplomacy ?? 0.5;
     if (rnd() > A.treatyProposeChance * (0.3 + 1.7 * d)) continue;
     const targets = coals.filter((x) => x !== c && game.canTreaty(c, x));
-    if (targets.length) game.proposeTreaty(L.id, pick(targets));
+    if (targets.length) game.proposeTreaty(L.id, pick(targets), rnd() < 0.4 ? 'trade' : 'nap');
   }
 }
 
-module.exports = { orders, diplomacy };
+module.exports = { orders, diplomacy, respond, summit };

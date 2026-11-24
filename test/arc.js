@@ -6,7 +6,7 @@ const N = Number(process.argv[2]) || 200, AIWAR = process.argv[3] === 'ai';
 const o = { turns: 0, start: 0, ignited: 0, esch: 0, tierHist: [0, 0, 0, 0, 0, 0], tierTurn: [[], [], [], [], [], []], causes: {}, ends: {} };
 for (let i = 0; i < N; i++) {
   const g = new Game('A'); const h = g.addPlayer('x'); g.removePlayer(h.id);
-  g.start(AIWAR ? { fillTo: CONFIG.maxPerCoalition } : {});
+  g.start(AIWAR ? { fillTo: CONFIG.maxPerCoalition, autoSummit: true } : { autoSummit: true });
   o.start += g.activeTrigsits().length;
   while (g.phase !== 'over') { g.resolve(); g.nextTurn(); }
   o.turns += g.turn; o.tierHist[g.tier]++;

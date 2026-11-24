@@ -15,6 +15,17 @@ const CONFIG = {
   maxTurns: 30,                 // hard safety cap
   actionsPerTurn: 3,            // strikes / spy / commit / negotiate per player per turn (builds are free)
 
+  // ---------------- Game flow ----------------
+  // Lobby (pick a country) -> WORLD SUMMIT (pacts & trade) -> ONE opening TRIGSIT -> the world widens.
+  flow: {
+    summitSeconds: 90,
+    tutorialSummitSeconds: 600,
+    openingCrises: 1,                                         // how many TRIGSITs ignite when the summit closes
+    scheduledIgnition: { startTurn: 3, everyTurns: 2, chance: 0.75 }, // the world won't wait: periodic new crises
+    minTurns: 8,                                              // settle everything before this and a new crisis ignites
+    homeBonus: 0.3,                                           // extra share of your own country's yields
+  },
+
   // ---------------- Resources ----------------
   resources: {
     ind: { name: 'INDUSTRY', short: 'IND' },
@@ -58,18 +69,19 @@ const CONFIG = {
   // ---------------- Threat levels (capability unlocks) ----------------
   // The game starts small: only a few TRIGSITs are active and only crisis-local actions are allowed.
   // As escalation rises, the threat level ratchets up (never down), unlocking more dangerous options
-  // and igniting more dormant TRIGSITs. `at` = escalation needed. `builds` = units newly buildable.
+  // and igniting more dormant TRIGSITs. A level unlocks at `at` escalation OR once `crises` TRIGSITs
+  // have ignited in total, whichever comes first. `builds` = units newly buildable.
   threat: {
     tiers: [
-      { level: 1, name: 'CRISIS',            at: 0,   spawn: 0, builds: ['conv', 'defense'],
-        unlocks: 'Deploy divisions and negotiate at your own TRIGSITs. Pacts only with coalitions you face.' },
-      { level: 2, name: 'CONFRONTATION',     at: 1.5, spawn: 1, builds: ['spies'],
-        unlocks: 'Spies and disinformation. Mediate any crisis. Pacts with anyone.' },
-      { level: 3, name: 'BRINKMANSHIP',      at: 3.5, spawn: 1, builds: ['tactical', 'delivery'],
+      { level: 1, name: 'CRISIS',            at: 0,   crises: 1,  spawn: 0, builds: ['conv', 'defense'],
+        unlocks: 'Respond to the opening crisis: deploy, negotiate, mediate, or back a side with aid. Pacts only with coalitions you face.' },
+      { level: 2, name: 'CONFRONTATION',     at: 1.5, crises: 3,  spawn: 0, builds: ['spies'],
+        unlocks: 'Spies and disinformation. Pacts and trade with anyone.' },
+      { level: 3, name: 'BRINKMANSHIP',      at: 3.5, crises: 6,  spawn: 0, builds: ['tactical', 'delivery'],
         unlocks: 'Tactical nukes against enemy divisions at your TRIGSITs.' },
-      { level: 4, name: 'NUCLEAR THRESHOLD', at: 5.5, spawn: 2, builds: [],
+      { level: 4, name: 'NUCLEAR THRESHOLD', at: 5.5, crises: 9,  spawn: 1, builds: [],
         unlocks: 'Tactical strikes on the homeland of coalitions you face in a crisis.' },
-      { level: 5, name: 'GENERAL WAR',       at: 7.5, spawn: 2, builds: ['strategic'],
+      { level: 5, name: 'GENERAL WAR',       at: 7.5, crises: 13, spawn: 1, builds: ['strategic'],
         unlocks: 'Strategic warheads. Any coalition can be targeted.' },
     ],
   },
@@ -102,6 +114,10 @@ const CONFIG = {
     peacePerInfluence: 2,             // negotiation: peace meter += influence x this
     peaceThreshold: 100,
     militaryReward: { ind: 12, ura: 6, inf: 6 }, // split among winning side's players
+    supportPerInd: 1.5,          // BACK A SIDE: each IND of aid pushes control this much
+    supportMaxPerOrder: 12,      // max IND per aid order
+    supportSpillPerInd: 0.012,   // chance per IND that the backer gets dragged into a direct crisis with the other side
+    supportEscalation: 0.05,
     peaceDividend: { inf: 4, ind: 4 },           // each negotiator when peace is reached
   },
 
@@ -117,7 +133,9 @@ const CONFIG = {
 
   // ---------------- Treaties ----------------
   treaty: {
-    breakInfPenalty: 5,
+    breakInfPenalty: 5,          // breaking a non-aggression pact
+    tradeBonus: { ind: 1, inf: 1 }, // per turn, per player, for each active trade agreement
+    tradeBreakInfPenalty: 2,     // cancelling a trade agreement (no escalation)
   },
 
   // ---------------- Scoring ----------------
@@ -128,6 +146,7 @@ const CONFIG = {
   // ---------------- Tutorial ----------------
   tutorial: {
     coalition: 'AMNAT',
+    country: '840',            // tutorial seat: United States
     include: ['berlin'],       // the tutorial's first crisis is always Berlin
     turnSeconds: 600,          // relaxed timer for training games
     aiHoldFireTurns: 4,        // AI makes no unprovoked nukes for this many turns
@@ -145,6 +164,7 @@ const CONFIG = {
     nukesPerCoalitionPerTurn: 1,     // AI coalition launches at most this many strikes per turn
     betrayChance: 0.35,              // per active pact per turn, scaled by (0.4 - loyalty)
     treatyAcceptChance: 0.55,
+    tradeAcceptChance: 0.75,
     escalationCaution: 6,            // AI avoids optional nukes at/above this level
   },
 

@@ -14,9 +14,27 @@
   const STEPS = [
     {
       title: 'WELCOME, COMMANDER',
-      text: `This is a <b>training game</b>: just you against AI, with 10 minutes per turn, so take your time.<br><br>
-        You lead <b style="color:#4da3ff">AMNAT</b> (US/NATO, the blue countries). Six AI coalitions control the other colours.<br><br>
+      text: `This is a <b>training game</b>: just you against AI heads of state, with relaxed timers, so take your time.<br><br>
+        You lead the <b>United States</b> for <b style="color:#4da3ff">AMNAT</b> (US/NATO, the blue countries). Six AI coalitions control the other colours.<br><br>
         I'll point at things. Gold-ringed items are what to look at or click.`,
+    },
+    {
+      title: 'THE WORLD SUMMIT',
+      target: '#summit .sm-grid',
+      action: true,
+      text: `Before any crisis, the world's leaders meet.<br>
+        <b>🤝 NAP</b>: a non-aggression pact. Breaking it is announced to everyone and ignites a crisis between you.<br>
+        <b>💱 TRADE</b>: +1 IND +1 INF every turn for both coalitions, until someone nukes the other.<br><br>
+        <b>Propose a 💱 TRADE agreement</b> to any coalition. (If someone offers you one, ACCEPT counts too.)`,
+      done: () => (S()?.treaties || []).some((t) => t.kind === 'trade' && (t.a === me()?.coalition || (t.b === me()?.coalition && t.status === 'active'))),
+    },
+    {
+      title: 'CLOSE THE SUMMIT',
+      target: '#readyBtn',
+      action: true,
+      text: `AI leaders answer offers after a moment of thought. Watch the feed at the bottom.<br><br>
+        When you're done dealing, press <b>READY</b>. The summit closes and <b>the first TRIGSIT ignites.</b>`,
+      done: () => S()?.phase && S().phase !== 'summit',
     },
     {
       title: 'HOW YOU WIN',
@@ -25,11 +43,11 @@
         Hit others hard, avoid getting hit, and you climb. The best ratio when the game ends wins.`,
     },
     {
-      title: 'IT STARTS SMALL',
-      target: '#map',
-      text: `The gold <b>⚠ markers</b> are <b>TRIGSITs</b>, live crises. Only a few are active right now, and every coalition is in at least one. <b>Yours is the Berlin Blockade</b> (AMNAT vs SOVWAR).<br><br>
-        15+ more crises lie <b>dormant</b>. Defeats, nukes, betrayals and huge mobilizations <b>spill over</b> and ignite them.<br><br>
-        The game ends when <b>no TRIGSIT is left active</b>.`,
+      title: 'ONE CRISIS, FOR NOW',
+      target: '#rail',
+      text: `A <b>TRIGSIT</b> (triggering situation) has ignited: the <b>Berlin Blockade</b>, AMNAT vs SOVWAR. The camera is focused on it.<br><br>
+        This <b>rail</b> lists all 21 TRIGSITs: active, resolved, and 🔒 dormant. Defeats, nukes, betrayals, proxy aid and mobilization <b>spill over</b> and ignite dormant ones. As they do, <b>the map zooms out and more options unlock</b>.<br><br>
+        The game ends when no TRIGSIT is left active (after turn 8).`,
     },
     {
       title: 'ESCALATION & THREAT LEVEL',
@@ -46,17 +64,17 @@
     },
     {
       title: 'OPEN YOUR CRISIS',
-      target: 'g.trig[data-id="berlin"]',
+      target: '#rail [data-cr="berlin"]',
       action: true,
-      text: `<b>Click the ⚠ BERLIN BLOCKADE marker</b> in Germany (zoom in with the scroll wheel if needed). You can also find it in the <b>CRISES</b> tab.`,
+      text: `<b>Click BERLIN BLOCKADE</b> in the rail (or its ⚠ marker in Germany) to see your options.`,
       done: () => E()?.selected?.kind === 'trigsit' && E().selected.id === 'berlin',
     },
     {
       title: 'DEPLOY DIVISIONS',
       target: '#tab-target',
       action: true,
-      text: `This panel shows the crisis. The <b>tug-of-war bar</b> is military control: AMNAT pulls one way, SOVWAR the other. Reaching the end wins it.<br><br>
-        Set a number and press <b>DEPLOY DIVISIONS</b>. More divisions than the enemy means you pull the bar your way every turn. <i>But fighting raises escalation.</i>`,
+      text: `These are your <b>option cards</b> for this crisis. The <b>tug-of-war bar</b> is military control: AMNAT pulls one way, SOVWAR the other. Reaching the end wins it.<br><br>
+        In the <b>⚔ DEPLOY DIVISIONS</b> card, set a number and press <b>DEPLOY</b>. <i>But fighting raises escalation.</i> (Coalitions outside a crisis get different cards: mediate, or back a side.)`,
       done: () => hasAction('commit'),
     },
     {
@@ -90,7 +108,7 @@
     },
     {
       title: 'NEGOTIATE',
-      target: () => (tabIs('target') && E()?.selected?.id === 'berlin' ? '#tab-target' : 'g.trig[data-id="berlin"]'),
+      target: () => (tabIs('target') && E()?.selected?.id === 'berlin' ? '#tab-target' : '#rail [data-cr="berlin"]'),
       action: true,
       text: `War isn't the only way out. Click <b>BERLIN BLOCKADE</b> again and press <b>🕊 NEGOTIATE</b> to spend influence.<br><br>
         When the peace bar reaches 100%, the crisis resolves, escalation drops, and every negotiator earns a peace dividend.`,

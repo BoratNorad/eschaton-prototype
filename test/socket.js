@@ -19,7 +19,13 @@ b.on('state', (s) => {
     if (t) { step = 4; b.emit('treaty:respond', { id: t.id, accept: true }); }
   }
 });
+let readied = false;
 a.on('state', (s) => {
+  if (step === 1 && s.phase === 'summit' && !readied) {
+    readied = true; log('world summit in session, seats:', s.me.countryName, '/', s.players.length, 'leaders');
+    a.emit('treaty:propose', { target: 'REDCHI', kind: 'trade' });
+    a.emit('ready', true); b.emit('ready', true);
+  }
   if (step === 1 && s.phase === 'orders') {
     step = 2; log('game started, turn', s.turn, 'players', s.players.length, 'res', JSON.stringify(s.me.res));
     a.emit('chat', { to: 'all', text: 'hello world' });

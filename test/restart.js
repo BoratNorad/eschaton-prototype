@@ -28,7 +28,9 @@ process.on('uncaughtException', (e) => { if (!/ECONNRESET|ECONNREFUSED|fetch fai
   const wait = async (fn, ms = 15000) => { const t = Date.now(); while (!fn()) { if (Date.now() - t > ms) return false; await new Promise((r) => setTimeout(r, 100)); } return true; };
   await wait(() => w.io && $('[data-tutorial]')); await new Promise((r) => setTimeout(r, 300));
   $('[data-tutorial]').click();
-  if (!(await wait(() => w.ESCH?.S?.tutorial && $('#submitBtn')))) await fail('tutorial did not start');
+  if (!(await wait(() => w.ESCH?.S?.tutorial && $('#readyBtn')))) await fail('tutorial did not start');
+  $('#readyBtn').click(); // close the world summit
+  if (!(await wait(() => $('#submitBtn')))) await fail('summit did not close');
   console.log('tutorial running, turn', w.ESCH.S.turn);
   await stopServer(); console.log('server restarted (simulated redeploy)…');
   await startServer();
@@ -38,7 +40,7 @@ process.on('uncaughtException', (e) => { if (!/ECONNRESET|ECONNREFUSED|fetch fai
   const lost = $('#lost') && !$('#lost').classList.contains('hidden');
   const advanced = w.ESCH.S.me.submitted || w.ESCH.S.phase !== 'orders';
   console.log('after submit -> orders accepted:', advanced, '| player told game was lost:', !!lost, '| toast:', $('#toast').classList.contains('hidden') ? '-' : $('#toast').textContent);
-  if (lost) { $('#lostRestart').click(); const ok = await wait(() => w.ESCH.S?.turn === 1 && $('#lost').classList.contains('hidden') && w.ESCH.S.code !== undefined);
+  if (lost) { $('#lostRestart').click(); const oldCode = w.ESCH.S?.code; const ok = await wait(() => w.ESCH.S?.phase === 'summit' && w.ESCH.S.code !== oldCode && $('#lost').classList.contains('hidden'));
     console.log('restart tutorial from overlay:', ok ? 'new game started, code ' + w.ESCH.S.code : 'FAILED'); if (!ok) await fail('restart failed'); }
   await stopServer();
   if (!lost && !advanced) { console.log('REPRODUCED: submit silently does nothing after a server restart'); process.exit(2); }

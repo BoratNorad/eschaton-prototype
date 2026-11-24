@@ -77,6 +77,9 @@ function build(game, replay) {
   }
   for (const e of ch.filter((x) => x.t === 'tier' && x.level >= 3)) M(e.turn, 7, '⚠', `THREAT LEVEL ${e.level}: ${e.name}`, CONFIG.threat.tiers[e.level - 1].unlocks);
   for (const e of ch.filter((x) => x.t === 'spawn' && !/^The world/.test(x.cause)).slice(0, 3)) M(e.turn, 6, '🔥', `${e.name} IGNITES`, `${e.cause}.`);
+  const sm = ch.find((e) => e.t === 'summit');
+  if (sm) M(0, 5, '🤝', 'WORLD SUMMIT', `${sm.naps} non-aggression pact${sm.naps === 1 ? '' : 's'} and ${sm.trades} trade agreement${sm.trades === 1 ? '' : 's'} signed before the first shot.`);
+  for (const e of ch.filter((x) => x.t === 'opening')) M(1, 8, '🔥', `FIRST TRIGSIT: ${e.name}`, `${e.sides[0]} vs ${e.sides[1]}. The world turns to watch.`);
   const caught = ch.find((e) => e.t === 'spycaught');
   if (caught) M(caught.turn, 3, '🕵', 'AGENT BURNED', `A ${caught.c} spy is caught red-handed inside ${caught.target}.`);
   const hot = replay.frames.find((f) => f.esc >= 7);

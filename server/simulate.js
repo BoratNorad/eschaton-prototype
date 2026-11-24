@@ -5,7 +5,7 @@ const Game = require('./game');
 function simulate(id) {
   const g = new Game('SIM');
   g.mode = 'ai';
-  g.start({ fillTo: CONFIG.maxPerCoalition });
+  g.start({ fillTo: CONFIG.maxPerCoalition, autoSummit: true });
   let guard = 0;
   while (g.phase !== 'over' && guard++ < CONFIG.maxTurns + 2) { g.resolve(); g.nextTurn(); }
   return g.toReplay(id);

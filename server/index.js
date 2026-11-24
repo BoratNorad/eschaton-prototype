@@ -7,6 +7,7 @@ const CONFIG = require('./config');
 const Game = require('./game');
 const fs = require('fs');
 const { simulate } = require('./simulate');
+const AI = require('./ai');
 const TERR = require('./territories');
 
 const app = express();
@@ -96,6 +97,11 @@ function sendChatHistory(g, p) {
 
 function tick(room) {
   const g = room.game;
+  if (g.phase === 'summit') {
+    if (AI.respond(g, 1800)) broadcast(room);           // AI leaders answer offers after a short pause
+    if (Date.now() >= g.deadline || g.allSummitReady()) { g.endSummit(); broadcast(room); }
+    return;
+  }
   if (g.phase === 'orders' && (Date.now() >= g.deadline || g.allSubmitted())) {
     let report;
     try { report = g.resolve(); } catch (e) {
@@ -162,7 +168,9 @@ io.on('connection', (socket) => {
     const g = room.game;
     g.tutorial = true;
     g.turnSeconds = CONFIG.tutorial.turnSeconds;
+    g.summitSeconds = CONFIG.flow.tutorialSummitSeconds;
     const p = g.addPlayer(clean(name, 16) || 'Recruit', CONFIG.tutorial.coalition);
+    g.setCountry(p.id, CONFIG.tutorial.country);
     g.start({ include: CONFIG.tutorial.include });
     bind(room, p);
   });
@@ -197,6 +205,14 @@ io.on('connection', (socket) => {
     const x = ctx(); if (!x) return;
     if (x.g.setCoalition(x.p.id, c)) broadcast(x.room);
   });
+  socket.on('setCountry', (id) => {
+    const x = ctx(); if (!x) return;
+    if (x.g.setCountry(x.p.id, String(id))) broadcast(x.room);
+  });
+  socket.on('ready', (r) => {
+    const x = need(); if (!x) return;
+    if (x.g.setReady(x.p.id, r)) broadcast(x.room);
+  });
   socket.on('setTimer', (s) => {
     const x = ctx(); if (!x || x.g.hostId !== x.p.id || x.g.phase !== 'lobby') return;
     if (CONFIG.turnSecondOptions.includes(Number(s))) { x.g.turnSeconds = Number(s); broadcast(x.room); }
@@ -217,7 +233,11 @@ io.on('connection', (socket) => {
     const x = need(); if (!x) return;
     x.g.unsubmit(x.p.id); broadcast(x.room);
   });
-  socket.on('treaty:propose', (target) => { const x = need(); if (x && x.g.proposeTreaty(x.p.id, target)) broadcast(x.room); });
+  socket.on('treaty:propose', (arg) => {
+    const x = need(); if (!x) return;
+    const target = typeof arg === 'string' ? arg : arg?.target;
+    if (x.g.proposeTreaty(x.p.id, target, arg?.kind === 'trade' ? 'trade' : 'nap')) broadcast(x.room);
+  });
   socket.on('treaty:respond', ({ id, accept } = {}) => { const x = need(); if (x && x.g.respondTreaty(x.p.id, id, !!accept)) broadcast(x.room); });
   socket.on('treaty:break', (id) => { const x = need(); if (x && x.g.breakTreaty(x.p.id, id)) broadcast(x.room); });
 

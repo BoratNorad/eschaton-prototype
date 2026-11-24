@@ -27,11 +27,19 @@ setTimeout(() => fail('timeout'), 40000);
   $('#createBtn').click();
   if (!(await wait(() => !$('#lobby').classList.contains('hidden')))) fail('no lobby');
   console.log('lobby shown, code', $('#lobbyCode').textContent, 'cards', w.document.querySelectorAll('.coal-card').length);
-  w.document.querySelector('[data-join="AMNAT"]').click();
+  const csel = w.document.querySelector('[data-country="AMNAT"]'); csel.value = '250'; csel.dispatchEvent(new w.Event('change'));
+  await wait(() => w.document.querySelector('.coal-card.mine'));
+  console.log('picked country:', w.document.querySelector('.coal-card.mine .slot.you')?.textContent.trim());
   await wait(() => $('.coal-card.mine'));
   $('#startBtn').click();
   if (!(await wait(() => !$('#game').classList.contains('hidden') && w.document.querySelectorAll('path.country').length > 100))) fail('game/map did not render');
   console.log('map countries:', w.document.querySelectorAll('path.country').length, 'trigsits:', w.document.querySelectorAll('g.trig').length);
+  if (!(await wait(() => w.ESCH.S?.phase === 'summit' && $('#readyBtn')))) fail('no summit');
+  console.log('summit: cards', w.document.querySelectorAll('.sm-card').length, '| seat', w.ESCH.S.me.countryName);
+  $('[data-sm-prop][data-kind="trade"]').click();
+  $('#readyBtn').click();
+  if (!(await wait(() => w.ESCH.S?.phase === 'orders'))) fail('summit did not close');
+  console.log('first crisis:', w.ESCH.S.trigsits.filter((t) => t.status === 'active').map((t) => t.name).join(','), '| auto-selected:', w.ESCH.selected?.id, '| option cards:', w.document.querySelectorAll('#tab-target .opt').length);
   console.log('scoreboard rows:', w.document.querySelectorAll('.sb-row').length, '| esc segs:', w.document.querySelectorAll('.seg').length, '| phase:', $('.phase.on')?.textContent);
   // click Russia, queue tactical strike
   const ru = [...w.document.querySelectorAll('path.country')].find((p) => p.__data__.id === '643');
@@ -39,26 +47,23 @@ setTimeout(() => fail('timeout'), 40000);
   await wait(() => $('#tacBtn'));
   console.log('target panel:', $('#tab-target h3').textContent);
   $('#tacBtn').click();
-  // open one of MY active crises (start crises are random now) and deploy
-  const mine = w.ESCH.S.trigsits.find((t) => t.status === 'active' && t.sides.includes(w.ESCH.S.me.coalition));
-  console.log('my starting crisis:', mine.name, '| threat level', w.ESCH.S.tier, '| tactical button locked:', $('#tacBtn')?.disabled);
-  [...w.document.querySelectorAll('g.trig')].find((g) => g.__data__.id === mine.id).dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
-  await wait(() => $('#comBtn'));
-  $('#comBtn').click();
+  // respond to the opening crisis: deploy if we're a party, otherwise back a side
+  const first = w.ESCH.S.trigsits.find((t) => t.status === 'active');
+  console.log('threat level', w.ESCH.S.tier, '| tactical button locked:', $('#tacBtn')?.disabled);
+  w.document.querySelector(`#railBody [data-cr="${first.id}"]`).click();
+  await wait(() => $('#comBtn') || $('#supBtn'));
+  if ($('#comBtn')) $('#comBtn').click(); else { $('#supBtn').click(); console.log('not a party -> sent aid'); }
   // tabs
   for (const t of ['build', 'intel', 'diplo', 'comms', 'target']) w.document.querySelector(`[data-tab="${t}"]`).click();
-  w.document.querySelector('[data-tab="crises"]').click();
-  const crises = w.document.querySelectorAll('#tab-crises .crisis').length;
-  w.document.querySelector('[data-cf="all"]').click();
-  console.log('crises tab: mine', crises, '| all', w.document.querySelectorAll('#tab-crises .crisis').length, '| labels at zoom 1:', [...w.document.querySelectorAll('g.trig text')].filter((t) => t.textContent.startsWith('⚠')).length, 'full of 21');
-  w.document.querySelector('#tab-crises .crisis').click();
-  console.log('crisis click -> target:', $('#tab-target h3')?.textContent);
+  console.log('rail: active', w.document.querySelectorAll('#railBody .crisis').length, '| dormant', w.document.querySelectorAll('#railBody .rail-row.dormant').length);
+  w.document.querySelector('#railBody .rail-row.dormant').click();
+  console.log('dormant click -> target:', $('#tab-target h3')?.textContent);
   w.document.querySelector('[data-tab="build"]').click();
   w.document.querySelector('[data-inc="conv"]').click();
   w.document.querySelector('[data-tab="intel"]').click();
   w.document.querySelector('[data-reveal="SOVWAR"]').click();
   w.document.querySelector('[data-tab="diplo"]').click();
-  w.document.querySelector('[data-prop="LATAM"]').click();
+  w.document.querySelector('[data-prop="LATAM"][data-kind="trade"]').click();
   w.document.querySelector('[data-tab="comms"]').click();
   $('#chatText').value = 'testing comms'; $('#chatSend').click();
   await wait(() => $('#chatLog').textContent.includes('testing comms'));

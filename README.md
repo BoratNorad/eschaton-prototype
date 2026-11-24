@@ -16,11 +16,14 @@ Turn-based Cold War thermonuclear strategy for the browser. 7 coalitions, 8 live
     node test/restart.js        # spawns its own server, restarts it mid-tutorial, checks recovery
 
 ## How a game unfolds
-- **Starts small**: a random handful of the 21 TRIGSITs ignite so every coalition is in at least one; the rest are dormant.
-- **Threat levels** (1 CRISIS → 5 GENERAL WAR) ratchet up with escalation and unlock capabilities: crisis-local troops &
-  negotiation → spies & mediation → tactical nukes on troops → homeland strikes → strategic warheads.
-- **Spillover**: military defeats, nukes, betrayals, burned spies and mass mobilizations ignite dormant TRIGSITs.
-- All rules and numbers live in `server/config.js` (`threat`, `spillover`). `node test/arc.js 200 [ai]` reports the pacing.
+1. **Lobby**: pick the country you will lead (this sets your coalition). AI heads of state fill the rest.
+2. **World Summit** (turn 0): sign non-aggression pacts and trade agreements (+IND/+INF per turn). Ends when everyone is READY or time runs out.
+3. **One opening TRIGSIT** ignites and the camera focuses on it. Parties can deploy, negotiate or withdraw; everyone else can mediate or back a side with aid (a proxy war that may drag them in).
+4. **The world widens**: scheduled ignitions and spillover (defeats, nukes, betrayals, proxy aid, mobilization) set off dormant TRIGSITs; the map zooms out to fit them. The left rail lists all 21.
+5. **Threat levels** (1 CRISIS → 5 GENERAL WAR) unlock by escalation *or* by how many TRIGSITs have ignited: spies → tactical nukes on troops → homeland strikes → strategic warheads.
+6. The game ends when no TRIGSIT is active (not before turn 8). Best INDDIR/SUFDDIR ratio wins.
+
+Tunables: `flow`, `threat`, `spillover`, `treaty`, `trigsit` in `server/config.js`. `node test/arc.js 200 [ai]` reports pacing.
 
 ## Modes
 - **Multiplayer**: create a room, share the code, AI fills empty slots.

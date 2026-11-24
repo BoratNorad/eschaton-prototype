@@ -325,3 +325,55 @@ table.ars th { color: var(--dim); font-weight: 400; }
 #td .trig .half { stroke: #000; stroke-width: 0.6; } #td .trig .outline { fill: none; stroke: #000; stroke-width: 1; }
 #td .trig .ring { stroke: #ffb000; } #td .trig.selected .outline { stroke: #fff; stroke-width: 2; }
 @media (max-width: 900px) { #tdMain { grid-template-columns: 1fr; grid-template-rows: 50vh auto; } #tdSide { border-left: 0; border-top: 1px solid var(--line); } #td { height: auto; } }
+
+/* ---------- country picker ---------- */
+.country-sel { width: 100%; margin: 4px 0 6px; font-size: 11px; }
+
+/* ---------- 3-column game layout: rail | map | side ---------- */
+#main { grid-template-columns: 236px 1fr 380px; }
+#rail { border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto; min-height: 0; padding: 0 8px 10px; }
+.rail-head { position: sticky; top: 0; background: var(--panel); padding: 9px 2px 6px; font-size: 11px; letter-spacing: 3px; color: var(--amber); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; z-index: 1; }
+.rail-link { text-decoration: none; }
+.rail-sec { font-size: 10px; letter-spacing: 2px; color: var(--dim); margin: 10px 0 5px; }
+.rail-note { font-size: 11px; color: var(--dim); margin: 6px 0; }
+.rail-row { display: flex; justify-content: space-between; gap: 6px; font-size: 10px; padding: 4px 4px; border-bottom: 1px dashed #15222b; cursor: pointer; color: var(--text); }
+.rail-row span { color: var(--dim); white-space: nowrap; }
+.rail-row:hover, .rail-row.focus { background: rgba(255,176,0,0.08); }
+.rail-row.dormant { color: #50606b; } .rail-row.dormant.mine { color: #7d8d78; }
+.crisis.focus { border-color: var(--amber); box-shadow: 0 0 14px -4px var(--amber); }
+#camBtn { position: absolute; top: 10px; right: 10px; }
+
+/* ---------- response option cards ---------- */
+.opt-grid { display: grid; gap: 6px; }
+.opt { border: 1px solid var(--line); background: var(--panel2); padding: 8px 9px; }
+.opt:hover { border-color: #2c4250; }
+.opt.danger { border-color: #4a2020; }
+.opt-t { color: #eef4f6; letter-spacing: 1px; font-size: 12px; }
+.opt-d { font-size: 10px; color: var(--dim); line-height: 1.45; margin: 3px 0 2px; } .opt-d b { color: var(--text); }
+.opt .actrow { margin: 4px 0 0; } .opt select { width: 90px; }
+.opt-grid + .note { margin-top: 8px; }
+
+/* ---------- world summit ---------- */
+#summit { position: absolute; inset: 0; z-index: 30; background: rgba(3,6,9,0.86); overflow-y: auto; padding: 18px; display: flex; justify-content: center; align-items: flex-start; }
+.summit-box { width: 980px; max-width: 100%; border: 1px solid var(--amber); background: #070c10; box-shadow: 0 0 50px rgba(255,176,0,0.15); padding: 18px 22px; }
+.sm-head { display: flex; justify-content: space-between; align-items: flex-end; }
+.sm-head h2 { margin: 2px 0 0; color: var(--amber); letter-spacing: 5px; }
+.sm-timer { text-align: right; } #smTimer { font-size: 26px; color: var(--green); }
+.sm-intro { font-size: 12px; line-height: 1.55; } .sm-intro b { color: #fff; }
+.sm-you { border-left: 3px solid var(--c); padding: 6px 10px; background: var(--panel); margin-bottom: 10px; }
+.sm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px; }
+.sm-card { border: 1px solid var(--line); border-top: 3px solid var(--c); background: var(--panel2); padding: 9px 10px; }
+.sm-n { color: var(--c); font-weight: 700; letter-spacing: 3px; text-shadow: 0 0 10px var(--c); }
+.sm-leaders { font-size: 11px; margin: 5px 0; line-height: 1.5; }
+.sm-ab { font-size: 10px; color: var(--amber); }
+.sm-deals { display: flex; flex-direction: column; gap: 4px; margin-top: 7px; font-size: 11px; }
+.sm-deals .btn { align-self: flex-start; }
+.sm-ok { color: var(--green); } .sm-in { color: #e6c86e; } .sm-in .btn { margin-left: 4px; }
+.sm-foot { display: grid; grid-template-columns: 1fr auto; gap: 14px; margin-top: 12px; align-items: end; }
+.sm-feed { max-height: 120px; overflow-y: auto; font-size: 11px; border: 1px solid var(--line); padding: 6px 8px; background: #05090d; }
+.sm-ready { text-align: center; } #readyBtn { padding: 12px 18px; }
+@media (max-width: 900px) {
+  #main { grid-template-columns: 1fr; grid-template-rows: 55vh auto auto; }
+  #rail { order: 3; max-height: 260px; border-right: 0; border-top: 1px solid var(--line); }
+  .sm-foot { grid-template-columns: 1fr; }
+}
