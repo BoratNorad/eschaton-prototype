@@ -13,12 +13,15 @@ const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 const nm = (p) => path.join(__dirname, '..', 'node_modules', p);
+// Build id: changes on every deploy so open tabs can detect they're running stale code.
+const BUILD = (process.env.RENDER_GIT_COMMIT || '').slice(0, 7) || Date.now().toString(36);
+const noCache = (res) => res.setHeader('Cache-Control', 'no-cache'); // always revalidate (ETag), never run stale JS
 
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public'), { setHeaders: noCache }));
 app.get('/vendor/d3.min.js', (_, res) => res.sendFile(nm('d3/dist/d3.min.js')));
 app.get('/vendor/topojson-client.min.js', (_, res) => res.sendFile(nm('topojson-client/dist/topojson-client.min.js')));
 app.get('/vendor/countries-110m.json', (_, res) => res.sendFile(nm('world-atlas/countries-110m.json')));
-app.get('/config.js', (_, res) => res.type('application/javascript').send(`window.CONFIG = ${JSON.stringify(CONFIG)};`));
+app.get('/config.js', (_, res) => { noCache(res); res.type('application/javascript').send(`window.CONFIG = ${JSON.stringify(CONFIG)};\nwindow.BUILD = ${JSON.stringify(BUILD)};`); });
 app.get('/health', (_, res) => res.json({ ok: true, rooms: rooms.size, replays: replays.size }));
 
 // ---------------- replays (memory + best-effort disk; Render's free disk is wiped on restart)
@@ -92,7 +95,14 @@ function sendChatHistory(g, p) {
 function tick(room) {
   const g = room.game;
   if (g.phase === 'orders' && (Date.now() >= g.deadline || g.allSubmitted())) {
-    const report = g.resolve();
+    let report;
+    try { report = g.resolve(); } catch (e) {
+      // never leave players stuck on a locked turn: log it, skip the turn, keep going
+      console.error('resolve error', g.code, e);
+      g._events = null;
+      g.pushLog('⚠ Command network glitch: this turn could not be resolved and was skipped.', 'alert');
+      report = { turn: g.turn, events: [], anims: [] };
+    }
     for (const p of g.players.values()) if (p.socketId) io.to(p.socketId).emit('report', report);
     if (g.phase !== 'over') {
       g.phase = 'report';
@@ -119,6 +129,8 @@ function createRoom() {
 }
 
 io.on('connection', (socket) => {
+  socket.emit('hello', { build: BUILD });
+  socket.on('ping:game', (ack) => { if (typeof ack === 'function') ack({ ok: !!rooms.get(socket.data.code)?.game.players.get(socket.data.pid) }); });
   const ctx = () => {
     const room = rooms.get(socket.data.code);
     const p = room?.game.players.get(socket.data.pid);

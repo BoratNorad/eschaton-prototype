@@ -73,14 +73,29 @@
   socket.on('errorMsg', (m) => { $('#landingErr').textContent = m; toast(m); });
 
   // Server no longer has our game (restart / redeploy). Tell the player instead of failing silently.
+  // Stale tab after a redeploy? Reload once to pick up the new code.
+  socket.on('hello', ({ build }) => {
+    if (!window.BUILD || build === window.BUILD) { try { sessionStorage.removeItem('esch:reload'); } catch {} return; }
+    let n = 0; try { n = Number(sessionStorage.getItem('esch:reload') || 0); } catch {}
+    if (n >= 2) return; // avoid reload loops if something is odd
+    try { sessionStorage.setItem('esch:reload', String(n + 1)); } catch {}
+    location.reload();
+  });
+  // Every few seconds, confirm the server still has our game; otherwise say so.
+  setInterval(() => {
+    if (!S || S.phase === 'over' || !socket.connected) return;
+    socket.timeout(5000).emit('ping:game', (err, res) => { if (!err && res && !res.ok) onGameLost(); });
+  }, 8000);
+
   let lostWasTutorial = false;
-  socket.on('gameLost', () => {
+  socket.on('gameLost', () => onGameLost());
+  function onGameLost() {
     if (roomCode) { try { localStorage.removeItem('esch:tok:' + roomCode); } catch {} }
     lostWasTutorial = !!S?.tutorial;
     if (!S && !L) { history.replaceState(null, '', '/'); return; } // stale link on the landing page: just stay there
     $('#lostRestart').textContent = lostWasTutorial ? '▶ RESTART TUTORIAL' : 'START A NEW GAME';
     $('#lost').classList.remove('hidden');
-  });
+  }
   $('#lostMenu').onclick = () => { location.href = '/'; };
   $('#lostRestart').onclick = () => {
     if (lostWasTutorial) socket.emit('tutorial', { name: myName() });
