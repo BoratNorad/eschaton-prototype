@@ -55,6 +55,44 @@ const CONFIG = {
     labels: ['DEFCON 5', 'DEFCON 5', 'DEFCON 4', 'DEFCON 4', 'DEFCON 3', 'DEFCON 3', 'DEFCON 2', 'DEFCON 2', 'DEFCON 1', 'DEFCON 1', 'ESCHATON'],
   },
 
+  // ---------------- Threat levels (capability unlocks) ----------------
+  // The game starts small: only a few TRIGSITs are active and only crisis-local actions are allowed.
+  // As escalation rises, the threat level ratchets up (never down), unlocking more dangerous options
+  // and igniting more dormant TRIGSITs. `at` = escalation needed. `builds` = units newly buildable.
+  threat: {
+    tiers: [
+      { level: 1, name: 'CRISIS',            at: 0,   spawn: 0, builds: ['conv', 'defense'],
+        unlocks: 'Deploy divisions and negotiate at your own TRIGSITs. Pacts only with coalitions you face.' },
+      { level: 2, name: 'CONFRONTATION',     at: 1.5, spawn: 1, builds: ['spies'],
+        unlocks: 'Spies and disinformation. Mediate any crisis. Pacts with anyone.' },
+      { level: 3, name: 'BRINKMANSHIP',      at: 3.5, spawn: 1, builds: ['tactical', 'delivery'],
+        unlocks: 'Tactical nukes against enemy divisions at your TRIGSITs.' },
+      { level: 4, name: 'NUCLEAR THRESHOLD', at: 5.5, spawn: 2, builds: [],
+        unlocks: 'Tactical strikes on the homeland of coalitions you face in a crisis.' },
+      { level: 5, name: 'GENERAL WAR',       at: 7.5, spawn: 2, builds: ['strategic'],
+        unlocks: 'Strategic warheads. Any coalition can be targeted.' },
+    ],
+  },
+
+  // ---------------- Spillover (decisions ignite dormant TRIGSITs) ----------------
+  spillover: {
+    battleEscalation: 0.12,        // each crisis where both sides fight this turn
+    militaryWinEscalation: 0.75,   // a TRIGSIT won by force
+    spawnEscalation: 0.15,         // a new TRIGSIT ignites
+    spyCaughtEscalation: 0.25,
+    peaceDeescalation: 0.75,       // a TRIGSIT settled by negotiation
+    calmDecay: 0.5,                // no nukes AND no battles this turn
+    cooling: 0.1,                  // any turn without nukes cools the meter this much
+    nonNuclearCap: 9.5,            // only an actual nuke can push the meter to ESCHATON
+    defeatSpawnChance: 0.6,        // loser of a military resolution flares up elsewhere
+    nukeSpawnChance: 0.5,          // victim of a nuke dragged into a new front
+    betrayalSpawnChance: 1,        // breaking a pact ignites that pair's crisis
+    spyCaughtSpawnChance: 0.35,
+    mobilizationThreshold: 20,     // total divisions at one crisis...
+    mobilizationSpawnChance: 0.1,  // ...may spill into a neighbouring crisis
+    maxSpawnsPerTurn: 2,           // (threat-level ignitions don't count toward this)
+  },
+
   // ---------------- Conventional war at TRIGSITs ----------------
   trigsit: {
     progressPerForce: 2,             // net forces advantage x this = progress per turn
@@ -90,6 +128,7 @@ const CONFIG = {
   // ---------------- Tutorial ----------------
   tutorial: {
     coalition: 'AMNAT',
+    include: ['berlin'],       // the tutorial's first crisis is always Berlin
     turnSeconds: 600,          // relaxed timer for training games
     aiHoldFireTurns: 4,        // AI makes no unprovoked nukes for this many turns
   },

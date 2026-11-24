@@ -34,6 +34,8 @@ function build(game, replay) {
     frozen: trig.filter((t) => t.how === 'timer').length,
     peakEsc: Math.max(...replay.frames.map((f) => f.esc)),
     leaders: replay.players.length,
+    ignited: ch.filter((e) => e.t === 'spawn').length,
+    maxTier: Math.max(1, ...ch.filter((e) => e.t === 'tier').map((e) => e.level)),
   };
 
   // ---------- headline
@@ -73,6 +75,8 @@ function build(game, replay) {
     else if (t.how === 'military') M(t.turn, 5, '⚔', t.name, `${t.winner} wins by force against ${t.sides.find((s) => s !== t.winner)}.`);
     else M(t.turn, 3, '⌛', t.name, 'The clock runs out. A frozen conflict.');
   }
+  for (const e of ch.filter((x) => x.t === 'tier' && x.level >= 3)) M(e.turn, 7, '⚠', `THREAT LEVEL ${e.level}: ${e.name}`, CONFIG.threat.tiers[e.level - 1].unlocks);
+  for (const e of ch.filter((x) => x.t === 'spawn' && !/^The world/.test(x.cause)).slice(0, 3)) M(e.turn, 6, '🔥', `${e.name} IGNITES`, `${e.cause}.`);
   const caught = ch.find((e) => e.t === 'spycaught');
   if (caught) M(caught.turn, 3, '🕵', 'AGENT BURNED', `A ${caught.c} spy is caught red-handed inside ${caught.target}.`);
   const hot = replay.frames.find((f) => f.esc >= 7);
@@ -114,6 +118,7 @@ function build(game, replay) {
     `🏆 ${winner} prevails · INDDIR/SUFDDIR ${winRatio.toFixed(2)}`,
     `☢ ${stats.nukes} warheads · 🛡 ${stats.intercepted} intercepted · 🔥 ${stats.glassed} territories glassed`,
     `🗡 ${stats.betrayals} betrayals · 🕊 ${stats.peace} peace deals · ⚔ ${stats.military} won by force · peak escalation ${stats.peakEsc}/10`,
+    `🔥 ${stats.ignited} crises ignited by spillover · threat level reached ${stats.maxTier}/5 (${CONFIG.threat.tiers[stats.maxTier - 1].name})`,
     '',
     'KEY MOMENTS',
     ...keyMoments.slice(0, 7).map((m) => `T${m.turn} ${m.icon} ${m.title}: ${m.text}`),

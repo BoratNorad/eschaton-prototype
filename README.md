@@ -15,6 +15,13 @@ Turn-based Cold War thermonuclear strategy for the browser. 7 coalitions, 8 live
     node test/trigsits.js       # (server running) dossier page: markers, matrix, filters
     node test/restart.js        # spawns its own server, restarts it mid-tutorial, checks recovery
 
+## How a game unfolds
+- **Starts small**: a random handful of the 21 TRIGSITs ignite so every coalition is in at least one; the rest are dormant.
+- **Threat levels** (1 CRISIS → 5 GENERAL WAR) ratchet up with escalation and unlock capabilities: crisis-local troops &
+  negotiation → spies & mediation → tactical nukes on troops → homeland strikes → strategic warheads.
+- **Spillover**: military defeats, nukes, betrayals, burned spies and mass mobilizations ignite dormant TRIGSITs.
+- All rules and numbers live in `server/config.js` (`threat`, `spillover`). `node test/arc.js 200 [ai]` reports the pacing.
+
 ## Modes
 - **Multiplayer**: create a room, share the code, AI fills empty slots.
 - **Tutorial**: solo training game with a step-by-step coach.

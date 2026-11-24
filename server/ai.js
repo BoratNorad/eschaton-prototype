@@ -23,6 +23,7 @@ function orders(game, p) {
   const budget = game._aiNukes || (game._aiNukes = {});
   const add = (a) => {
     if (actions.length >= CONFIG.actionsPerTurn) return;
+    if (!game.allowed(p, a).ok) return;      // respects the current threat level
     if (a.type === 'strike') {               // coalition-wide cap on AI launches per turn
       const k = `${game.turn}:${my}`;
       if ((budget[k] || 0) >= A.nukesPerCoalitionPerTurn) return;
@@ -45,6 +46,12 @@ function orders(game, p) {
       inf -= game.strikeInfCost(kind);
       kind === 'strategic' ? str-- : tac--;
     }
+  }
+
+  // 1b. Below the nuclear threshold, answer a nuclear attack at a shared crisis instead
+  if (striker && !actions.some((a) => a.type === 'strike') && tac > 0 && rnd() < A.retaliateChance * (0.3 + 1.4 * T.vengeance)) {
+    const shared = myTrig.find((t) => t.sides.includes(striker) && game.sideForces(t, striker) > 0);
+    if (shared && inf >= game.strikeInfCost('tactical')) add({ type: 'strike', kind: 'tactical', target: { kind: 'trigsit', id: shared.id } });
   }
 
   // 2. TRIGSITs: commit forces, nuke if outnumbered, negotiate if losing or hot
@@ -100,6 +107,7 @@ function orders(game, p) {
   if (esc >= 5 + T.aggression * 2) want = ['defense', ...want];
   for (let pass = 0; pass < 4; pass++) {
     for (const u of want) {
+      if (!game.unitUnlocked(p, u)) continue;
       if (u === 'spies' && p.arsenal.spies >= 2 + Math.round(T.deceit * 3)) continue;
       if (u === 'delivery' && p.arsenal.delivery >= p.arsenal.strategic + 1) continue;
       const cost = game.unitCost(p, u);
@@ -133,7 +141,8 @@ function diplomacy(game) {
     const L = leader(mem);
     const d = L?.persona?.traits?.diplomacy ?? 0.5;
     if (rnd() > A.treatyProposeChance * (0.3 + 1.7 * d)) continue;
-    game.proposeTreaty(L.id, pick(coals.filter((x) => x !== c)));
+    const targets = coals.filter((x) => x !== c && game.canTreaty(c, x));
+    if (targets.length) game.proposeTreaty(L.id, pick(targets));
   }
 }
 

@@ -64,6 +64,7 @@
       <div id="escBox">
         <div class="esc-head"><span>GLOBAL ESCALATION</span><span id="escLabel">DEFCON 5</span></div>
         <div id="escMeter"></div>
+        <div id="threatLine"></div>
       </div>
       <div id="meBadge"></div>
       <button class="btn small ghost" data-howto>?</button>
@@ -114,12 +115,12 @@
     <div class="modal">
       <h2>HOW TO PLAY <span class="dim">// 60-SECOND BRIEFING</span></h2>
       <ol>
-        <li><b>The world is on fire.</b> Every Cold War crisis is live at once. Seven coalitions start at their historic peak arsenals. ⚠ markers are <b>TRIGSITs</b> (triggering situations).</li>
-        <li><b>The game ends when every TRIGSIT is resolved</b>, by negotiation, by one side winning militarily, or by its timer running out.</li>
+        <li><b>It starts small.</b> A few crises are live, and every coalition is in at least one. ⚠ markers are <b>TRIGSITs</b> (triggering situations). At first you can only deploy troops and negotiate at <b>your own</b> crises.</li>
+        <li><b>The game ends when no TRIGSIT is left active</b>: each is settled by negotiation, won militarily, or frozen when its timer runs out. But decisions <b>spill over</b>: defeats, nukes, betrayals and huge mobilizations ignite new crises.</li>
         <li><b>Win</b> with the best <b>INDDIR / SUFDDIR</b> ratio: damage you inflict directly ÷ damage you suffer directly. Hit hard, get hit little.</li>
         <li><b>Each turn</b>, everyone secretly queues orders. Then all orders resolve at once. You get <b>3 actions</b> per turn (strike, spy, deploy, negotiate), plus unlimited builds you can afford.</li>
         <li><b>Resources:</b> IND (industry), URA (uranium) and INF (influence) come from your coalition's territories. Damaged land produces less.</li>
-        <li><b>Nukes</b> raise the <b>escalation meter</b>. Higher escalation means bigger damage, pricier strikes, and a higher chance the enemy auto-retaliates. <b>At 10 it's ESCHATON</b>: every silo fires and the game ends.</li>
+        <li><b>Escalation unlocks danger.</b> Fighting, spillover and nukes raise the meter, and the <b>THREAT LEVEL</b> ratchets up: spies, then tactical nukes on troops, then homeland strikes, then strategic warheads. Everyone starts at their historic peak arsenal, just locked. <b>At 10 it's ESCHATON</b>: every silo fires and the game ends.</li>
         <li><b>Spies</b> reveal an enemy coalition's arsenal, or plant false intel so enemies see fake numbers. Trust nothing.</li>
         <li><b>Treaties:</b> propose a non-aggression pact. Breaking one (or nuking a partner) is announced to the world.</li>
       </ol>
@@ -138,6 +139,7 @@
     </div>
   </div>
   <div id="toast" class="hidden"></div>
+  <div id="tierBanner" class="hidden"></div>
   <div id="coachRing" class="hidden"></div>
   <div id="coach" class="hidden"></div>
 

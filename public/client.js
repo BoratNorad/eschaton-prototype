@@ -187,6 +187,18 @@
     $('#escMeter').innerHTML = segs.join('');
     $('#escLabel').textContent = `${C.escalation.labels[Math.min(max, Math.floor(e))]} · ${fmt(e)}/${max}`;
     $('#escBox').classList.toggle('hot', e >= 7);
+    const tier = S.tier || 1, next = TIERS[tier];
+    $('#threatLine').innerHTML = `<span class="tl-lvl tl-${tier}">THREAT ${tier}/${TIERS.length} · ${tierName(tier)}</span>` +
+      (next ? `<span class="dim">next: ${next.name} at ${next.at}</span>` : '<span class="warn">ALL CAPABILITIES UNLOCKED</span>');
+    $('#threatLine').title = TIERS.filter((t) => t.level <= tier).map((t) => `L${t.level} ${t.name}: ${t.unlocks}`).join('\n');
+    if (renderTop.tier && tier > renderTop.tier) {
+      const T = TIERS[tier - 1], b = $('#tierBanner');
+      b.innerHTML = `<div class="tb-k">⚠ THREAT LEVEL ${T.level}</div><div class="tb-n">${T.name}</div><div class="tb-u">UNLOCKED: ${esc(T.unlocks)}</div>`;
+      b.classList.remove('hidden'); b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
+      clearTimeout(b._t); b._t = setTimeout(() => b.classList.add('hidden'), 6000);
+      b.onclick = () => b.classList.add('hidden');
+    }
+    renderTop.tier = tier;
     $('#escBox').title = `Damage x${fmt(1 + e * C.strike.escalationDamageMult)} · auto-retaliation ${Math.round((C.strike.retaliationBase + e * C.strike.retaliationPerLevel) * 100)}% · strike cost TAC ${S.strikeCost.tactical} / STR ${S.strikeCost.strategic} INF`;
     if (S.me) {
       const cc = C.coalitions[S.me.coalition];
@@ -233,7 +245,7 @@
         <span class="bar"><i style="width:${(r.ratio / maxR) * 100}%"></i></span><span class="rt">${r.ratio.toFixed(2)}</span>
         <span class="sub">dealt ${r.inflicted} · took ${r.suffered}</span>
       </div>`).join('') +
-      `<div class="dim small" style="margin-top:4px">TRIGSITs active: ${S.trigsits.filter((t) => t.status === 'active').length}/${S.trigsits.length}</div>`;
+      `<div class="dim small" style="margin-top:4px">TRIGSITs: ${S.trigsits.filter((t) => t.status === 'active').length} active · ${S.trigsits.filter((t) => t.status === 'resolved').length} resolved · ${S.trigsits.filter((t) => t.status === 'dormant').length} dormant</div>`;
   }
 
   // ======================================================== map
@@ -323,6 +335,7 @@
       e.append('text').attr('x', 8).attr('y', 3);
       return e;
     });
+    g.style('display', (d) => (d.status === 'dormant' ? 'none' : null));
     g.attr('class', (d) => `trig ${d.status}${selected?.kind === 'trigsit' && selected.id === d.id ? ' selected' : ''}${d.sides.includes(S.me?.coalition) ? ' mine' : ''}`)
       .attr('transform', (d) => `translate(${projection(d.lonlat)}) scale(${1 / Math.sqrt(zoomK)})`);
     trigLabels();
@@ -337,6 +350,12 @@
     if (!gFx || !anims?.length) return;
     let hitMe = false;
     anims.slice(0, 120).forEach((a, i) => {
+      if (a.flare) {
+        const [x, y] = projection(a.to);
+        for (let k = 0; k < 3; k++) gFx.append('circle').attr('cx', x).attr('cy', y).attr('r', 2).style('fill', 'none').style('stroke', '#ff8a3d').style('stroke-width', 2).attr('filter', 'url(#glow)')
+          .transition().delay(Math.min(i * 280, 5000) + k * 350).duration(1400).attr('r', 34).style('opacity', 0).remove();
+        return;
+      }
       const from = a.from, to = targetPoint(a);
       const delay = Math.min(i * 280, 5000);
       const p = gFx.append('path').attr('class', 'missile').attr('d', path({ type: 'LineString', coordinates: [from, to] }))
@@ -408,6 +427,18 @@
     };
   }
   const canEdit = () => S && S.phase === 'orders' && S.me && !S.me.submitted;
+  // ---- threat-level locks
+  const TIERS = C.threat.tiers;
+  const tierName = (l) => TIERS[l - 1]?.name || '?';
+  const lockTxt = (l) => `🔒 Unlocks at THREAT LEVEL ${l}: ${tierName(l)}`;
+  const unitTier = (u) => TIERS.find((t) => t.builds.includes(u))?.level || 1;
+  const adv = () => new Set(S.caps?.adversaries || []);
+  function applyLock(btn, msg) {
+    if (!btn || !msg) return;
+    btn.disabled = true;
+    const row = btn.closest('.actrow') || btn.parentElement;
+    if (row && !row.nextElementSibling?.classList?.contains('lock')) row.insertAdjacentHTML('afterend', `<div class="lock">${esc(msg)}</div>`);
+  }
   function addAction(a) {
     if (!canEdit()) return toast('Orders locked. Click REVISE to edit.');
     if (draft.actions.length >= C.actionsPerTurn) return toast(`Max ${C.actionsPerTurn} actions per turn.`);
@@ -445,6 +476,9 @@
           <span class="small">${Math.round(C.strike.strategic.damage * mult)} dmg · ${S.strikeCost.strategic} INF · +${C.strike.strategic.escalation} esc · ${av.strategic} launchable</span></div>
         <p class="note">Intercept and auto-retaliation odds rise with enemy ABMs and escalation. Retaliation chance now: ${Math.round((C.strike.retaliationBase + S.escalation * C.strike.retaliationPerLevel + (C.coalitions[t.c].ability.id === 'deadhand' ? C.coalitions[t.c].ability.value : 0)) * 100)}%.</p>`}`;
       if (!own) {
+        const cp = S.caps || {};
+        applyLock($('#tacBtn'), !cp.nukeTerritory ? lockTxt(4) : (!adv().has(t.c) && !cp.nukeAny ? `🔒 You can only strike coalitions you face in a crisis until THREAT LEVEL 5: ${tierName(5)}` : null));
+        applyLock($('#strBtn'), !cp.strategic ? lockTxt(5) : null);
         $('#tacBtn').onclick = () => addAction({ type: 'strike', kind: 'tactical', target: { kind: 'territory', id: selected.id }, label: t.name });
         $('#strBtn').onclick = () => addAction({ type: 'strike', kind: 'strategic', target: { kind: 'territory', id: selected.id }, label: t.name });
       }
@@ -478,6 +512,8 @@
         <span class="small">kills ${Math.round(C.strike.tactical.trigsitKillPct * 100)}% · ${S.strikeCost.tactical} INF</span></div>` :
         '<p class="note">You are not a party to this crisis, but you can mediate.</p>'}`}`;
     if (t.status !== 'active') return;
+    if (!party && !S.caps?.negotiateAny) applyLock($('#negBtn'), `🔒 Mediating crises you're not in unlocks at THREAT LEVEL 2: ${tierName(2)}`);
+    if (party && !S.caps?.nukeTrigsit) applyLock($('#tnBtn'), lockTxt(3));
     $('#negBtn').onclick = () => {
       const n = Math.floor(Number($('#negAmt').value));
       if (!(n > 0) || n > av.inf) return toast('Not enough influence.');
@@ -498,10 +534,11 @@
   function renderCrises() {
     const el = $('#tab-crises');
     const me = S.me.coalition;
-    const list = S.trigsits.filter((t) => crisesFilter === 'all' || (crisesFilter === 'mine' ? t.sides.includes(me) : t.status === 'active'))
+    const dormant = S.trigsits.filter((t) => t.status === 'dormant').length;
+    const list = S.trigsits.filter((t) => t.status !== 'dormant').filter((t) => crisesFilter === 'all' || (crisesFilter === 'mine' ? t.sides.includes(me) : t.status === 'active'))
       .sort((a, b) => (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1) || a.turnsLeft - b.turnsLeft);
     const active = S.trigsits.filter((t) => t.status === 'active').length;
-    el.innerHTML = `<h3>CRISES</h3><p class="note">${active} of ${S.trigsits.length} TRIGSITs still active. The game ends when all are resolved. Click one to fly there.</p>
+    el.innerHTML = `<h3>CRISES</h3><p class="note">${active} active TRIGSIT${active === 1 ? '' : 's'}. The game ends when none are left active. <span class="spill-note">🔥 ${dormant} dormant crises can still ignite through spillover.</span> Click one to fly there.</p>
       <div class="chips">${[['mine', `MY ${me}`], ['active', 'ACTIVE'], ['all', 'ALL']].map(([k, l]) => `<button class="chip ${crisesFilter === k ? 'on' : ''}" data-cf="${k}">${l}</button>`).join('')}
         <a class="chip" href="/trigsits.html" target="_blank">📁 DOSSIERS</a></div>` +
       list.map((t) => {
@@ -531,8 +568,9 @@
         const U = C.units[u], cost = S.me.costs[u];
         const afford = Object.entries(cost).every(([k, v]) => proj[k] >= v);
         const n = draft.builds[u] || 0;
-        return `<div class="unit"><div><div class="nm">${U.name} <span class="have">· have ${S.me.arsenal[u]}</span></div><div class="cost">${costStr(cost)}</div></div>
-          <div class="stepper"><button class="btn tiny" data-dec="${u}" ${!n || !canEdit() ? 'disabled' : ''}>−</button><b>${n}</b><button class="btn tiny" data-inc="${u}" ${!afford || !canEdit() ? 'disabled' : ''}>+</button></div>
+        const lvl = unitTier(u), locked = !(S.caps?.builds || []).includes(u);
+        return `<div class="unit ${locked ? 'locked' : ''}"><div><div class="nm">${U.name} <span class="have">· have ${S.me.arsenal[u]}</span></div><div class="cost">${costStr(cost)}${locked ? ` <span class="lock-tag">🔒 L${lvl} ${tierName(lvl)}</span>` : ''}</div></div>
+          <div class="stepper"><button class="btn tiny" data-dec="${u}" ${!n || !canEdit() ? 'disabled' : ''}>−</button><b>${n}</b><button class="btn tiny" data-inc="${u}" ${!afford || !canEdit() || locked ? 'disabled' : ''}>+</button></div>
           <div class="desc">${U.desc}</div></div>`;
       }).join('') + `<h4>YOUR ARSENAL</h4>` + arsenalTable([{ name: 'You', arsenal: S.me.arsenal }]);
     el.querySelectorAll('[data-inc]').forEach((b) => b.onclick = () => { draft.builds[b.dataset.inc] = (draft.builds[b.dataset.inc] || 0) + 1; renderAll(); });
@@ -562,6 +600,12 @@
           <button class="btn tiny" data-reveal="${c}" ${av.spies < 1 || av.actions < 1 ? 'disabled' : ''}>🕵 REVEAL</button></div>
           ${i ? `<div class="snap">STR ${i.arsenal.strategic} · TAC ${i.arsenal.tactical} · DLV ${i.arsenal.delivery} · ABM ${i.arsenal.defense} · CONV ${i.arsenal.conv} · SPY ${i.arsenal.spies}</div><div class="age">report from turn ${i.turn}${S.turn - i.turn > 2 ? ' (stale)' : ''}</div>` : '<div class="age">no intel</div>'}</div>`;
       }).join('');
+    if (!S.caps?.spy) {
+      el.querySelectorAll('[data-reveal],[data-plant]').forEach((b) => (b.disabled = true));
+      el.querySelector('h3').insertAdjacentHTML('afterend', `<div class="lock">${lockTxt(2)}</div>`);
+    } else if (!S.caps.spyAny) {
+      el.querySelectorAll('[data-reveal]').forEach((b) => { if (!adv().has(b.dataset.reveal)) { b.disabled = true; b.title = `Only coalitions you face in a crisis until THREAT LEVEL 4: ${tierName(4)}`; } });
+    }
     el.querySelectorAll('[data-reveal]').forEach((b) => b.onclick = () => addAction({ type: 'spy', mode: 'reveal', target: b.dataset.reveal, label: b.dataset.reveal }));
     el.querySelectorAll('[data-plant]').forEach((b) => b.onclick = () => addAction({ type: 'spy', mode: 'plant', fake: b.dataset.plant, label: b.dataset.plant }));
   }
@@ -584,6 +628,9 @@
       <h4>PROPOSE NON-AGGRESSION PACT</h4>` +
       COALS.filter((c) => c !== me).map((c) => `<div class="treaty"><b style="color:${col(c)}">${c}</b><button class="btn tiny" data-prop="${c}" ${busy.has(c) ? 'disabled' : ''}>PROPOSE</button></div>`).join('') +
       (broken.length ? '<h4>BROKEN PACTS (PUBLIC RECORD)</h4>' + broken.map((t) => `<div class="treaty broken"><span>${t.a} ⟷ ${t.b}</span><span class="small warn">broken by ${t.brokenBy}</span></div>`).join('') : '');
+    if (!S.caps?.treatyAny) el.querySelectorAll('[data-prop]').forEach((b) => {
+      if (!adv().has(b.dataset.prop)) { b.disabled = true; b.textContent = '🔒 L2'; b.title = `Pacts with coalitions you don't face in a crisis unlock at THREAT LEVEL 2: ${tierName(2)}`; }
+    });
     el.querySelectorAll('[data-prop]').forEach((b) => b.onclick = () => socket.emit('treaty:propose', b.dataset.prop));
     el.querySelectorAll('[data-acc]').forEach((b) => b.onclick = () => socket.emit('treaty:respond', { id: b.dataset.acc, accept: true }));
     el.querySelectorAll('[data-rej]').forEach((b) => b.onclick = () => socket.emit('treaty:respond', { id: b.dataset.rej, accept: false }));

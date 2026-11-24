@@ -128,7 +128,7 @@
     const t = TR.find((x) => x.id === selected);
     if (!t) {
       $('#tdCard').innerHTML = `<div class="td-card"><h3>SELECT A TRIGSIT</h3><p class="note">Every pair of coalitions shares exactly one crisis, so the matrix above is the whole board: row × column = their flashpoint. Filter by coalition to see its six fronts.</p>
-        <p class="note">A TRIGSIT resolves one of three ways, and <b>the game ends when all 21 have resolved</b>.</p></div>`;
+        <p class="note">Each game starts with only a few active (every coalition gets at least one). The rest lie dormant until <b>spillover</b> from defeats, nukes, betrayals or mass mobilization ignites them. The game ends when none are left active.</p></div>`;
       return;
     }
     const T = C.trigsit;

@@ -25,53 +25,52 @@
         Hit others hard, avoid getting hit, and you climb. The best ratio when the game ends wins.`,
     },
     {
-      title: 'WHEN THE GAME ENDS',
+      title: 'IT STARTS SMALL',
       target: '#map',
-      text: `The gold <b>⚠ markers</b> on the map are <b>TRIGSITs</b>, live crises like Berlin and Korea. The number in [brackets] is how many turns until it freezes.<br><br>
-        The game ends when <b>every TRIGSIT is resolved</b>: by negotiation, by one side winning militarily, or by its timer running out.<br><br>
-        There are <b>21</b>, one for every pair of coalitions, and you're in <b>6</b> of them. The <b>CRISES</b> tab lists them all.`,
+      text: `The gold <b>⚠ markers</b> are <b>TRIGSITs</b>, live crises. Only a few are active right now, and every coalition is in at least one. <b>Yours is the Berlin Blockade</b> (AMNAT vs SOVWAR).<br><br>
+        15+ more crises lie <b>dormant</b>. Defeats, nukes, betrayals and huge mobilizations <b>spill over</b> and ignite them.<br><br>
+        The game ends when <b>no TRIGSIT is left active</b>.`,
     },
     {
-      title: 'THE ESCALATION METER',
+      title: 'ESCALATION & THREAT LEVEL',
       target: '#escBox',
-      text: `Every nuclear strike pushes this meter up. Higher escalation means <b>more damage</b>, <b>pricier strikes</b>, and a <b>bigger chance the enemy automatically retaliates</b>.<br><br>
-        If it reaches <b>10</b> it's <b style="color:#ff3b3b">ESCHATON</b>: every silo fires and the game ends. Quiet turns cool it down.`,
+      text: `Fighting, spillover and nukes push the <b>escalation meter</b> up. Peace deals and calm turns bring it down.<br><br>
+        As it rises, the <b>THREAT LEVEL</b> (under the meter) ratchets up and <b>unlocks more dangerous options</b>: spies, then tactical nukes, then homeland strikes, then strategic warheads.<br><br>
+        At <b>10</b> it's <b style="color:#ff3b3b">ESCHATON</b>: every silo fires and the game ends.`,
     },
     {
       title: 'YOUR RESOURCES',
       target: '#resBar',
       text: `<b>IND</b> (industry), <b>URA</b> (uranium) and <b>INF</b> (influence) pay for everything. The green number is what you earn each turn from your coalition's countries.<br><br>
-        Damaged countries produce less, so getting nuked hurts your economy as well as your score.`,
+        Damaged countries produce less, so getting hit hurts your economy as well as your score.`,
     },
     {
-      title: 'OPEN A CRISIS',
+      title: 'OPEN YOUR CRISIS',
       target: 'g.trig[data-id="berlin"]',
       action: true,
-      text: `Let's fight for Berlin. <b>Click the ⚠ BERLIN BLOCKADE marker</b> in Germany (zoom in with the scroll wheel if needed).`,
+      text: `<b>Click the ⚠ BERLIN BLOCKADE marker</b> in Germany (zoom in with the scroll wheel if needed). You can also find it in the <b>CRISES</b> tab.`,
       done: () => E()?.selected?.kind === 'trigsit' && E().selected.id === 'berlin',
     },
     {
       title: 'DEPLOY DIVISIONS',
       target: '#tab-target',
       action: true,
-      text: `This panel shows the crisis. The <b>tug-of-war bar</b> is military control: AMNAT pulls one way, SOVWAR the other. Reaching the end wins the crisis.<br><br>
-        Set a number and press <b>DEPLOY DIVISIONS</b>. More divisions than the enemy means you pull the bar your way every turn.`,
+      text: `This panel shows the crisis. The <b>tug-of-war bar</b> is military control: AMNAT pulls one way, SOVWAR the other. Reaching the end wins it.<br><br>
+        Set a number and press <b>DEPLOY DIVISIONS</b>. More divisions than the enemy means you pull the bar your way every turn. <i>But fighting raises escalation.</i>`,
       done: () => hasAction('commit'),
     },
     {
       title: 'THE ORDERS QUEUE',
       target: '#ordersBox',
       text: `Your order was <b>queued</b> here. Nothing happens yet: everyone plans in secret, then <b>all orders resolve at once</b>.<br><br>
-        You get <b>3 actions per turn</b> (deploy, strike, spy, negotiate). Building is free and doesn't use an action. Click ✕ to cancel an order.`,
+        You get <b>3 actions per turn</b>. Building is free and doesn't use an action. Click ✕ to cancel an order.`,
     },
     {
       title: 'BUILD SOMETHING',
       target: () => (tabIs('build') ? '#tab-build' : '[data-tab="build"]'),
       action: true,
-      text: `Open the <b>BUILD</b> tab and press <b>+</b> on any unit. Good first picks:<br>
-        • <b>Conventional Forces</b>: more divisions for crises<br>
-        • <b>Missile Defense</b>: a chance to shoot down incoming nukes<br>
-        Units are ready next turn.`,
+      text: `Open the <b>BUILD</b> tab and press <b>+</b> on <b>Conventional Forces</b> or <b>Missile Defense</b>.<br><br>
+        Notice the <b>🔒</b> items: warheads and spies are locked until the threat level rises. Units you build are ready next turn.`,
       done: () => hasBuild(),
     },
     {
@@ -85,40 +84,35 @@
       title: 'RESOLUTION',
       target: () => ($('#reportBox') && !$('#reportBox').classList.contains('hidden') ? '#reportBox' : '#logBar'),
       action: true,
-      text: `Watch the <b>resolution report</b>: it lists what every coalition did this turn. Battles at crises cost both sides divisions (that counts as damage too).<br><br>
+      text: `The <b>resolution report</b> lists what everyone did. Watch for <b style="color:#ff8a3d">🔥 SPILLOVER</b> lines (a new crisis igniting) and <b style="color:#ff3b3b">⚠ THREAT LEVEL</b> lines (new capabilities unlocking).<br><br>
         The full history is always in the log at the bottom. <i>Waiting for turn 2…</i>`,
       done: () => S()?.turn >= 2 && S()?.phase === 'orders',
     },
     {
-      title: 'SPY ON AN ENEMY',
-      target: () => (tabIs('intel') ? '#tab-intel' : '[data-tab="intel"]'),
+      title: 'NEGOTIATE',
+      target: () => (tabIs('target') && E()?.selected?.id === 'berlin' ? '#tab-target' : 'g.trig[data-id="berlin"]'),
       action: true,
-      text: `Knowledge is power. Open <b>INTEL</b> and press <b>🕵 REVEAL</b> on any enemy (SOVWAR is a good choice).<br><br>
-        Beware: enemies can <b>plant false intel</b>, so the numbers you get might be fake. You can do the same to them.`,
-      done: () => hasAction('spy'),
-    },
-    {
-      title: 'THE NUCLEAR OPTION',
-      target: '#map',
-      action: true,
-      skipLabel: 'STAY PEACEFUL (SKIP)',
-      text: `Click any <b style="color:#ff4b4b">red SOVWAR country</b> (Russia, Poland…). The panel shows the <b>damage</b>, the <b>INF cost</b>, and the <b>retaliation chance</b>.<br><br>
-        Press <b>☢ TACTICAL</b> to queue a strike, or skip if you'd rather keep the peace. Strategic warheads hit 3× harder but escalate 3× more.`,
-      done: () => hasAction('strike'),
+      text: `War isn't the only way out. Click <b>BERLIN BLOCKADE</b> again and press <b>🕊 NEGOTIATE</b> to spend influence.<br><br>
+        When the peace bar reaches 100%, the crisis resolves, escalation drops, and every negotiator earns a peace dividend.`,
+      done: () => hasAction('negotiate'),
     },
     {
       title: 'DIPLOMACY',
       target: () => (tabIs('diplo') ? '#tab-diplo' : '[data-tab="diplo"]'),
       action: true,
-      text: `Open <b>TREATIES</b> and <b>PROPOSE</b> a non-aggression pact to any coalition. Treaties happen instantly and don't use an action.<br><br>
-        Pacts can be broken, but the whole world is told, and escalation jumps.`,
-      done: () => (S()?.treaties || []).some((t) => t.a === me()?.coalition),
+      text: `Open <b>TREATIES</b> and <b>PROPOSE</b> a non-aggression pact to <b style="color:#ff4b4b">SOVWAR</b>. If SOVWAR already sent you an offer, <b>ACCEPT</b> it instead. At threat level 1 you can only deal with coalitions you face in a crisis.<br><br>
+        Pacts take effect instantly. Breaking one is announced to the world and <b>ignites a new crisis</b> between you.`,
+      done: () => (S()?.treaties || []).some((t) => t.a === me()?.coalition || (t.b === me()?.coalition && t.status === 'active')),
     },
     {
-      title: 'NEGOTIATE PEACE',
-      target: () => (E()?.selected?.kind === 'trigsit' ? '#tab-target' : '#map'),
-      text: `Any player can spend <b>INF</b> to <b>🕊 NEGOTIATE</b> at a crisis, even one you're not part of. When the peace bar hits 100%, the crisis resolves and every negotiator earns a peace dividend.<br><br>
-        Tip: if you're ahead on the scoreboard, <b>ending crises ends the game sooner</b>.`,
+      title: 'LOCKED CAPABILITIES',
+      target: '#threatLine',
+      text: `You start with your full historical arsenal, but it's <b>locked</b>:<br>
+        <b>L2 CONFRONTATION</b>: spies, disinformation, mediating any crisis<br>
+        <b>L3 BRINKMANSHIP</b>: tactical nukes on enemy troops at your crises<br>
+        <b>L4 NUCLEAR THRESHOLD</b>: strikes on the homelands of coalitions you face<br>
+        <b>L5 GENERAL WAR</b>: strategic warheads, anyone is a target<br><br>
+        A big banner announces each new level.`,
     },
     {
       title: 'SUBMIT AGAIN',
@@ -130,10 +124,10 @@
     {
       title: "YOU'RE READY",
       text: `That's the whole game:<br>
-        <b>1.</b> Deploy divisions and negotiate to resolve crises<br>
-        <b>2.</b> Build, spy and bluff<br>
-        <b>3.</b> Nuke only when it improves your ratio, because the enemy may fire back<br>
-        <b>4.</b> Watch the escalation meter<br><br>
+        <b>1.</b> Fight or negotiate at your crises<br>
+        <b>2.</b> Every decision can <b>spill over</b> and ignite new ones<br>
+        <b>3.</b> Escalation unlocks deadlier tools for <i>everyone</i><br>
+        <b>4.</b> Nuke only when it improves your ratio, because they fire back<br><br>
         This training game continues as a normal match. When you're ready, start a real game and invite friends with the room code.`,
       final: true,
     },

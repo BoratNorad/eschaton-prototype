@@ -3,7 +3,7 @@ const { io } = require('socket.io-client');
 const URL = process.env.URL || 'http://localhost:3000';
 const a = io(URL), b = io(URL);
 const log = (...x) => console.log(...x);
-let code, aId, bId, step = 0;
+let code, aId, bId, step = 0, treatyFormed = false;
 const done = (ok, msg) => { log(ok ? 'PASS' : 'FAIL', msg); a.close(); b.close(); process.exit(ok ? 0 : 1); };
 setTimeout(() => done(false, 'timeout at step ' + step), 15000);
 
@@ -12,7 +12,7 @@ b.on('joined', (j) => { bId = j.pid; log('B joined'); a.emit('setCoalition', 'AM
 a.on('lobby', (l) => {
   if (step === 0 && l.players.length === 2 && l.players.every((p) => p.coalition)) { step = 1; log('lobby ok', l.players.map((p) => p.name + ':' + p.coalition).join(',')); a.emit('setTimer', 30); a.emit('start'); }
 });
-b.on('chat', (m) => { log('B got chat', m.scope, m.text); if (m.scope === 'pm') { step = 3; a.emit('treaty:propose', 'SOVWAR'); } });
+b.on('chat', (m) => { log('B got chat', m.scope, m.text); if (m.scope === 'pm') { step = 3; a.emit('treaty:propose', 'SOVWAR'); setTimeout(() => { if (step === 3) { step = 5; a.emit('orders', { builds: { conv: 1 }, actions: [{ type: 'strike', kind: 'tactical', target: { kind: 'territory', id: '643' } }] }); b.emit('orders', { builds: {}, actions: [] }); } }, 1500); } });
 b.on('state', (s) => {
   if (step === 3) {
     const t = s.treaties.find((t) => t.status === 'proposed' && t.b === 'SOVWAR');
@@ -26,7 +26,8 @@ a.on('state', (s) => {
     a.emit('chat', { to: bId, text: 'secret' });
   }
   if (step === 4 && s.treaties.some((t) => t.status === 'active')) {
-    step = 5; log('treaty active');
+    step = 5; treatyFormed = true; log('treaty active');
+    a.emit('treaty:break', s.treaties.find((t) => t.status === 'active').id);
     a.emit('orders', { builds: { conv: 1 }, actions: [{ type: 'strike', kind: 'tactical', target: { kind: 'territory', id: '643' } }, { type: 'spy', mode: 'reveal', target: 'REDCHI' }] });
     b.emit('orders', { builds: {}, actions: [] });
   }
@@ -35,7 +36,10 @@ a.on('state', (s) => {
     const broke = s.log.some((e) => e.text.includes('TREATY BROKEN'));
     log('turn resolved. esc', s.escalation, 'treaty broken announced:', broke, 'last events:', s.lastReport.events.length);
     log('private:', s.me.private.map((x) => x.text).join(' | '));
-    done(broke, 'full turn cycle');
+    const blocked = s.me.private.some((x) => /Order blocked: unlocks at THREAT LEVEL 4/.test(x.text));
+    log('turn-1 nuke blocked by threat level:', blocked, '| threat', s.tier, '| active crises', s.trigsits.filter((t) => t.status === 'active').length);
+    if (!blocked) return done(false, 'nuke should be locked at threat level 1');
+    done(!treatyFormed || broke, 'full turn cycle' + (treatyFormed ? ' (treaty formed and broken)' : ' (no shared crisis: pact correctly unavailable at L1)'));
   }
 });
 a.on('errorMsg', (e) => done(false, e)); b.on('errorMsg', (e) => done(false, e));

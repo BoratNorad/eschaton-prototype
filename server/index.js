@@ -163,7 +163,7 @@ io.on('connection', (socket) => {
     g.tutorial = true;
     g.turnSeconds = CONFIG.tutorial.turnSeconds;
     const p = g.addPlayer(clean(name, 16) || 'Recruit', CONFIG.tutorial.coalition);
-    g.start();
+    g.start({ include: CONFIG.tutorial.include });
     bind(room, p);
   });
 

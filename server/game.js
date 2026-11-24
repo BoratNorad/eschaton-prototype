@@ -45,6 +45,7 @@ class Game {
     this.winner = null;
     this.endReason = null;
     this.tutorial = false;
+    this.tier = 1;            // threat level (1..5), only ratchets up
     this.mode = 'human';      // 'human' | 'ai' (spectated simulation)
     this.chatter = [];        // AI leader lines waiting to be broadcast as chat
     this.chronicle = [];      // structured history for the after-action report
@@ -133,11 +134,12 @@ class Game {
     }
     // trigsits
     this.trigsits = CONFIG.trigsits.map((t) => ({
-      ...t, control: 0, peace: 0, turnsLeft: t.timer, status: 'active', winner: null,
+      ...t, control: 0, peace: 0, turnsLeft: t.timer, status: 'dormant', winner: null,
       forces: { [t.sides[0]]: {}, [t.sides[1]]: {} }, negotiators: {},
     }));
     this.turn = 1;
-    this.pushLog(`ESCHATON INITIATED. ${this.players.size} commanders across ${COALS.length} coalitions. ${this.trigsits.length} TRIGSITs active.`, 'sys');
+    this.igniteInitial(opts.include || []);
+    this.pushLog(`ESCHATON INITIATED. ${this.players.size} commanders across ${COALS.length} coalitions. ${this.activeTrigsits().length} TRIGSITs active, ${this.trigsits.length - this.activeTrigsits().length} dormant. THREAT LEVEL 1: CRISIS.`, 'sys');
     for (const p of shuffle([...this.players.values()].filter((x) => x.persona)).slice(0, 3)) this.say(p, 'open');
     this.frames.push(this.snapshot([], []));
     this.beginOrders();
@@ -211,6 +213,7 @@ class Game {
   proposeTreaty(pid, target) {
     const p = this.players.get(pid);
     if (!p || !COALS.includes(target) || target === p.coalition || this.phase === 'lobby' || this.phase === 'over') return null;
+    if (!this.canTreaty(p.coalition, target)) return null;
     const exists = this.treaties.find((t) => ['proposed', 'active'].includes(t.status) &&
       ((t.a === p.coalition && t.b === target) || (t.a === target && t.b === p.coalition)));
     if (exists) return null;
@@ -239,6 +242,7 @@ class Game {
     p.stats.betrayals++;
     this.chronicle.push({ t: 'betray', turn: this.turn, by: p.id, c: p.coalition, victim: other });
     this.say(p, 'betray');
+    if (rnd() < CONFIG.spillover.betrayalSpawnChance) this.spawnCrisis((t) => t.sides.includes(p.coalition) && t.sides.includes(other), `${p.coalition}'s betrayal of ${other}`);
     p.res.inf = Math.max(0, p.res.inf - CONFIG.treaty.breakInfPenalty);
     this.escalation = Math.min(CONFIG.escalation.max, this.escalation + CONFIG.escalation.treatyBreak);
     this.pushLog(`⚠ TREATY BROKEN: ${p.name} (${p.coalition}) tears up the pact with ${other}${reason ? ' — ' + reason : ''}. Escalation +${CONFIG.escalation.treatyBreak}.`, 'alert');
@@ -251,12 +255,15 @@ class Game {
     this._anims = [];
     this._nukesThisTurn = 0;
     this._saidThisTurn = 0;
+    this._spawns = 0;
+    this._battles = 0;
     for (const p of this.players.values()) p._spyUsed = 0, p._dlvUsed = 0;
     this.pushLog(`── TURN ${this.turn} RESOLUTION ──`, 'sys');
 
     // Collect actions in a fair random player order
     const order = shuffle([...this.players.values()]);
-    const acts = (type) => order.flatMap((p) => (p.orders?.actions || []).filter((a) => a && a.type === type).map((a) => [p, a]));
+    const acts = (type) => order.flatMap((p) => (p.orders?.actions || []).filter((a) => a && a.type === type).map((a) => [p, a]))
+      .filter(([p, a]) => { const r = this.allowed(p, a); if (!r.ok) this.priv(p, `Order blocked: ${r.reason}`, 'warn'); return r.ok; });
 
     for (const [p, a] of acts('spy')) this.doSpy(p, a);
     for (const [p, a] of acts('negotiate')) this.doNegotiate(p, a);
@@ -269,15 +276,18 @@ class Game {
     }
 
     if (this.phase !== 'over') {
+      this.checkTier();
       this.resolveTrigsits();
       for (const p of order) this.doBuilds(p);
       this.doIncome();
       AI.diplomacy(this);
       this.expireTreatyProposals();
-      if (this._nukesThisTurn === 0 && this.escalation > 0) {
-        this.escalation = Math.max(0, this.escalation - CONFIG.escalation.quietTurnDecay);
-        this.pushLog(`No nuclear use this turn. Escalation eases to ${round1(this.escalation)}.`, 'calm');
+      if (this._nukesThisTurn === 0) this.escalation = Math.max(0, this.escalation - CONFIG.spillover.cooling);
+      if (this._nukesThisTurn === 0 && !this._battles && this.escalation > 0) {
+        this.escalation = Math.max(0, this.escalation - CONFIG.spillover.calmDecay);
+        this.pushLog(`A calm turn: no nukes, no fighting. Escalation eases to ${round1(this.escalation)}.`, 'calm');
       }
+      this.checkTier();
       this.checkEnd();
     }
 
@@ -313,6 +323,8 @@ class Game {
       p.arsenal.spies--;
       p.stats.spyCaught++;
       this.chronicle.push({ t: 'spycaught', turn: this.turn, by: p.id, c: p.coalition, target });
+      this.bumpEsc(CONFIG.spillover.spyCaughtEscalation);
+      if (rnd() < CONFIG.spillover.spyCaughtSpawnChance) this.spawnCrisis((t) => t.sides.includes(p.coalition) && t.sides.includes(target), `A burned ${p.coalition} agent inside ${target}`);
       this.pushLog(`🕵 SPY CAPTURED: ${target} counter-intelligence catches an agent of ${p.name} (${p.coalition}).`, 'intel');
       return;
     }
@@ -444,6 +456,9 @@ class Game {
       }
     }
 
+    if (!chron.intercepted && rnd() < CONFIG.spillover.nukeSpawnChance) {
+      this.spawnCrisis((t) => t.sides.includes(defC) && !t.sides.includes(p.coalition), `Fallout from ${targetName} drags ${defC} into a new front`);
+    }
     this.say(p, isRetaliation ? 'retaliate' : 'strike', isRetaliation ? 0.5 : 0.8);
     if (!chron.intercepted && chron.dmg >= 30) { const v = pick(this.coalitionMembers(defC).filter((x) => x.persona).concat([null])); if (v) this.say(v, 'hit', 0.4); }
     // automatic retaliation (one level deep — no infinite chains)
@@ -454,11 +469,19 @@ class Game {
         const shooters = this.coalitionMembers(defC).sort((x, y) => (y.arsenal.strategic + y.arsenal.tactical) - (x.arsenal.strategic + x.arsenal.tactical));
         const s = shooters[0];
         if (s) {
-          const rk = s.arsenal.strategic > 0 && s._dlvUsed < s.arsenal.delivery ? 'strategic' : s.arsenal.tactical > 0 ? 'tactical' : null;
-          const targets = Object.values(this.territories).filter((t) => t.coalition === p.coalition && t.hp > 0).sort((x, y) => y.hp - x.hp);
-          if (rk && targets.length) {
+          const caps = this.capsFor(s);
+          let rk = caps.strategic && s.arsenal.strategic > 0 && s._dlvUsed < s.arsenal.delivery ? 'strategic' : s.arsenal.tactical > 0 ? 'tactical' : null;
+          let tgt = null;
+          if (caps.nukeTerritory) {
+            const targets = Object.values(this.territories).filter((t) => t.coalition === p.coalition && t.hp > 0).sort((x, y) => y.hp - x.hp);
+            if (targets.length) tgt = { kind: 'territory', id: targets[0].id };
+          } else if (tr && this.sideForces(tr, p.coalition) > 0) {
+            rk = s.arsenal.tactical > 0 ? 'tactical' : null; // below the nuclear threshold: answer at the crisis itself
+            tgt = { kind: 'trigsit', id: tr.id };
+          }
+          if (rk && tgt) {
             this.pushLog(`LAUNCH ON WARNING: ${defC} automated systems retaliate against ${p.coalition}!`, 'alert');
-            this.doStrike(s, rk, { kind: 'territory', id: targets[0].id }, true);
+            this.doStrike(s, rk, tgt, true);
           }
         }
       }
@@ -495,7 +518,7 @@ class Game {
   resolveTrigsits() {
     const T = CONFIG.trigsit;
     for (const tr of this.trigsits) {
-      if (tr.status !== 'active') continue;
+      if (tr.status !== 'active' || tr.ignitedTurn === this.turn) continue;
       const [A, B] = tr.sides;
       const fa = this.sideForces(tr, A), fb = this.sideForces(tr, B);
       // combat
@@ -505,6 +528,12 @@ class Game {
         this.recordDamage(B, A, lossA * T.damagePerCasualty);
         this.recordDamage(A, B, lossB * T.damagePerCasualty);
         this.pushLog(`⚔ ${tr.name}: ${A} loses ${lossA}, ${B} loses ${lossB} divisions.`, 'mil');
+        this._battles++;
+        this.bumpEsc(CONFIG.spillover.battleEscalation);
+      }
+      if (fa + fb >= CONFIG.spillover.mobilizationThreshold && rnd() < CONFIG.spillover.mobilizationSpawnChance) {
+        const c = fa >= fb ? A : B;
+        this.spawnCrisis((t) => t.sides.includes(c) && t.id !== tr.id, `Mass mobilization at ${tr.name} stretches ${c} onto another front`);
       }
       const eff = (c, f) => f * (CONFIG.coalitions[c].ability.id === 'mountain' ? 1 + CONFIG.coalitions[c].ability.value : 1);
       const net = eff(A, fa) - eff(B, fb);
@@ -531,6 +560,7 @@ class Game {
     }
     tr.forces = { [tr.sides[0]]: {}, [tr.sides[1]]: {} };
     if (how === 'peace') {
+      this.escalation = Math.max(0, this.escalation - CONFIG.spillover.peaceDeescalation);
       const ids = Object.keys(tr.negotiators);
       for (const id of ids) { const p = this.players.get(id); if (p) for (const [k, v] of Object.entries(CONFIG.trigsit.peaceDividend)) p.res[k] += v; }
       this.pushLog(`✅ TRIGSIT RESOLVED — ${tr.name}: settled at the negotiating table. ${ids.length} negotiators share the peace dividend.`, 'resolve');
@@ -538,6 +568,9 @@ class Game {
       const mem = this.coalitionMembers(winner);
       for (const p of mem) for (const [k, v] of Object.entries(CONFIG.trigsit.militaryReward)) p.res[k] += v / mem.length;
       this.pushLog(`✅ TRIGSIT RESOLVED — ${tr.name}: ${winner} wins militarily and seizes the spoils.`, 'resolve');
+      this.bumpEsc(CONFIG.spillover.militaryWinEscalation);
+      const loser = tr.sides.find((s) => s !== winner);
+      if (rnd() < CONFIG.spillover.defeatSpawnChance) this.spawnCrisis((t) => t.sides.includes(loser), `Defeat at ${tr.name} radicalizes ${loser}`);
     } else {
       this.pushLog(`✅ TRIGSIT RESOLVED — ${tr.name}: the clock runs out. Frozen conflict, no victor.`, 'resolve');
     }
@@ -548,6 +581,7 @@ class Game {
     const built = [];
     for (const [unit, n] of Object.entries(p.orders.builds || {})) {
       if (!CONFIG.units[unit]) continue;
+      if (!this.unitUnlocked(p, unit)) { this.priv(p, `Build blocked: ${CONFIG.units[unit].short} is not unlocked yet.`, 'warn'); continue; }
       let c = 0;
       const cost = this.unitCost(p, unit);
       while (c < n && this.canAfford(p, cost)) { this.pay(p, cost); p.arsenal[unit]++; c++; }
@@ -605,6 +639,101 @@ class Game {
     if (l) this.say(l, 'lose', 1, true);
     this.pushLog(`GAME OVER (${reason}). ${this.winner} prevails with INDDIR/SUFDDIR ratio ${this.ratio(this.winner).toFixed(2)}.`, 'sys');
   }
+
+  // ------------------------------------------------------------ crises, threat levels, permissions
+  activeTrigsits() { return this.trigsits.filter((t) => t.status === 'active'); }
+
+  // Random TRIGSITs until every coalition is in at least one (some end up in more).
+  igniteInitial(include) {
+    for (const id of include) { const t = this.trigsits.find((x) => x.id === id); if (t) t.status = 'active'; }
+    for (let guard = 0; guard < 50; guard++) {
+      const covered = new Set(this.activeTrigsits().flatMap((t) => t.sides));
+      const missing = COALS.filter((c) => !covered.has(c));
+      if (!missing.length) break;
+      const c = pick(missing);
+      const t = pick(this.trigsits.filter((x) => x.status === 'dormant' && x.sides.includes(c)));
+      if (t) t.status = 'active';
+    }
+  }
+
+  // Non-nuclear escalation can approach but never trigger ESCHATON — only a real launch can.
+  bumpEsc(amount) {
+    if (this.escalation >= CONFIG.spillover.nonNuclearCap) return;
+    this.escalation = Math.min(CONFIG.spillover.nonNuclearCap, this.escalation + amount);
+  }
+
+  spawnCrisis(filter, cause, force = false) {
+    if (!force && this._spawns >= CONFIG.spillover.maxSpawnsPerTurn) return null;
+    const t = pick(this.trigsits.filter((x) => x.status === 'dormant' && filter(x)));
+    if (!t) return null;
+    t.status = 'active'; t.turnsLeft = t.timer; t.ignitedTurn = this.turn;
+    if (!force) this._spawns = (this._spawns || 0) + 1;
+    this.bumpEsc(CONFIG.spillover.spawnEscalation);
+    this.pushLog(`🔥 SPILLOVER: ${cause}. ${t.name} ignites (${t.sides[0]} vs ${t.sides[1]}).`, 'spill');
+    this.chronicle.push({ t: 'spawn', turn: this.turn, id: t.id, name: t.name, cause, sides: t.sides });
+    if (this._anims) this._anims.push({ flare: true, to: t.lonlat, coalition: t.sides[0] });
+    return t;
+  }
+
+  checkTier() {
+    const tiers = CONFIG.threat.tiers;
+    while (this.tier < tiers.length && this.escalation >= tiers[this.tier].at) {
+      const T = tiers[this.tier];
+      this.tier++;
+      this.pushLog(`⚠ THREAT LEVEL ${T.level}: ${T.name}. Unlocked: ${T.unlocks}`, 'alert');
+      this.chronicle.push({ t: 'tier', turn: this.turn, level: T.level, name: T.name });
+      for (let i = 0; i < T.spawn; i++) this.spawnCrisis(() => true, `The world slides into ${T.name}`, true);
+    }
+  }
+
+  adversariesOf(c) {
+    const s = new Set();
+    for (const t of this.activeTrigsits()) if (t.sides.includes(c)) s.add(t.sides.find((x) => x !== c));
+    return s;
+  }
+  canTreaty(a, b) { return this.tier >= 2 || this.adversariesOf(a).has(b); }
+
+  capsFor(p) {
+    const t = this.tier;
+    const builds = CONFIG.threat.tiers.filter((x) => x.level <= t).flatMap((x) => x.builds);
+    return {
+      tier: t, adversaries: [...this.adversariesOf(p.coalition)], builds,
+      negotiateAny: t >= 2, spy: t >= 2, spyAny: t >= 4, treatyAny: t >= 2,
+      nukeTrigsit: t >= 3, nukeTerritory: t >= 4, nukeAny: t >= 5, strategic: t >= 5,
+    };
+  }
+  tierName(level) { return CONFIG.threat.tiers[level - 1]?.name || '?'; }
+
+  // Is this order legal right now? Returns { ok, reason }.
+  allowed(p, a) {
+    const c = this.capsFor(p), adv = new Set(c.adversaries);
+    const lock = (lvl) => ({ ok: false, reason: `unlocks at THREAT LEVEL ${lvl} (${this.tierName(lvl)})` });
+    const tr = a.trigsit ? this.trigsits.find((t) => t.id === a.trigsit) : null;
+    switch (a.type) {
+      case 'commit': case 'withdraw':
+        if (!tr || tr.status !== 'active') return { ok: false, reason: 'that TRIGSIT is not active' };
+        if (!tr.sides.includes(p.coalition)) return { ok: false, reason: 'you are not a party to that TRIGSIT' };
+        return { ok: true };
+      case 'negotiate':
+        if (!tr || tr.status !== 'active') return { ok: false, reason: 'that TRIGSIT is not active' };
+        if (!tr.sides.includes(p.coalition) && !c.negotiateAny) return lock(2);
+        return { ok: true };
+      case 'spy':
+        if (!c.spy) return lock(2);
+        if (a.mode !== 'plant' && !adv.has(a.target) && !c.spyAny) return { ok: false, reason: `you can only spy on coalitions you face in a crisis until THREAT LEVEL 4 (${this.tierName(4)})` };
+        return { ok: true };
+      case 'strike': {
+        if (a.kind === 'strategic') return c.strategic ? { ok: true } : lock(5);
+        if (a.target?.kind === 'trigsit') return c.nukeTrigsit ? { ok: true } : lock(3);
+        if (!c.nukeTerritory) return lock(4);
+        const ter = this.territories[a.target?.id];
+        if (ter && !adv.has(ter.coalition) && !c.nukeAny) return { ok: false, reason: `you can only strike coalitions you face in a crisis until THREAT LEVEL 5 (${this.tierName(5)})` };
+        return { ok: true };
+      }
+      default: return { ok: false, reason: 'unknown order' };
+    }
+  }
+  unitUnlocked(p, unit) { return this.capsFor(p).builds.includes(unit); }
 
   // ------------------------------------------------------------ personalities & replay
   say(p, event, chance = 1, force = false) {
@@ -668,7 +797,8 @@ class Game {
     const allies = me ? this.coalitionMembers(me.coalition).map((p) => ({ id: p.id, name: p.name, isAI: p.isAI, arsenal: p.arsenal, res: mapRound(p.res) })) : [];
     return {
       code: this.code, phase: this.phase, turn: this.turn, deadline: this.deadline, now: Date.now(), hostId: this.hostId,
-      turnSeconds: this.turnSeconds, escalation: this.escalation, tutorial: this.tutorial,
+      turnSeconds: this.turnSeconds, escalation: this.escalation, tutorial: this.tutorial, tier: this.tier,
+      caps: me ? this.capsFor(me) : null,
       players: this.publicPlayers(),
       territories: Object.fromEntries(Object.values(this.territories).map((t) => [t.id, { c: t.coalition, hp: t.hp, maxHp: t.maxHp, y: t.yields, name: t.name }])),
       trigsits: this.trigsits.map((t) => ({

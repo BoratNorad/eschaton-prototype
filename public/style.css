@@ -82,6 +82,17 @@ input:focus, select:focus { border-color: var(--amber); }
 .seg { background: #10181f; border: 1px solid #1a252d; position: relative; overflow: hidden; }
 .seg > i { position: absolute; inset: 0; width: 0; transition: width 0.6s; }
 .seg.lit > i { box-shadow: 0 0 10px currentColor; }
+#threatLine { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; letter-spacing: 1px; margin-top: 3px; cursor: help; }
+.tl-lvl { color: var(--green); font-weight: 700; } .tl-lvl.tl-2 { color: #c9f24d; } .tl-lvl.tl-3 { color: var(--amber); } .tl-lvl.tl-4 { color: #ff8a3d; } .tl-lvl.tl-5 { color: var(--red); animation: blink 1s steps(1) infinite; }
+.lock { font-size: 10px; color: #ff9a6b; margin: -2px 0 6px; }
+.lock-tag { color: #ff9a6b; font-size: 10px; margin-left: 4px; }
+.unit.locked { opacity: 0.55; }
+.le.spill { color: #ff8a3d; font-weight: 700; } .spill-note { color: #ff8a3d; }
+#tierBanner { position: fixed; top: 22%; left: 50%; transform: translateX(-50%); z-index: 160; text-align: center; cursor: pointer; padding: 18px 34px;
+  background: rgba(10,4,2,0.94); border: 2px solid var(--red); box-shadow: 0 0 60px rgba(255,59,59,0.45); max-width: min(620px, 92vw); }
+#tierBanner.pop { animation: bannerpop2 0.5s ease-out; } @keyframes bannerpop2 { from { transform: translateX(-50%) scale(1.4); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+#tierBanner .tb-k { color: var(--red); letter-spacing: 4px; font-size: 13px; } #tierBanner .tb-n { color: #fff; font-size: 34px; letter-spacing: 6px; font-weight: 700; margin: 4px 0; text-shadow: 0 0 20px rgba(255,59,59,0.8); }
+#tierBanner .tb-u { color: var(--amber); font-size: 13px; }
 #escBox.hot #escLabel { color: var(--red); animation: blink 0.8s steps(1) infinite; }
 #meBadge { font-size: 12px; text-align: right; }
 #meBadge b { color: var(--c); text-shadow: 0 0 10px var(--c); font-size: 15px; letter-spacing: 2px; }

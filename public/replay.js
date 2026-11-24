@@ -98,6 +98,7 @@
       e.append('text').attr('x', 8).attr('y', 3);
       return e;
     });
+    g.style('display', (d) => (d.s === 'dormant' ? 'none' : null));
     g.attr('class', (d) => `trig ${d.s}`).attr('transform', (d) => `translate(${projection(d.lonlat)}) scale(${1 / Math.sqrt(zoomK)})`);
     g.select('text').text((d) => {
       const full = zoomK >= 2.2; // 21 crises: names only when zoomed in
@@ -111,6 +112,12 @@
     if (!anims?.length) return;
     const step = Math.min(280, (budgetMs * 0.55) / anims.length);
     anims.forEach((a, i) => {
+      if (a.flare) {
+        const [x, y] = projection(a.to);
+        for (let k = 0; k < 3; k++) gFx.append('circle').attr('cx', x).attr('cy', y).attr('r', 2).style('fill', 'none').style('stroke', '#ff8a3d').style('stroke-width', 2).attr('filter', 'url(#glow)')
+          .transition().delay(i * step + k * 300).duration(1300).attr('r', 34).style('opacity', 0).remove();
+        return;
+      }
       const to = a.to || centroids[a.toTerritory] || [0, 0];
       const p = gFx.append('path').attr('class', 'missile').attr('d', path({ type: 'LineString', coordinates: [a.from, to] }))
         .style('stroke', col(a.coalition)).attr('filter', 'url(#glow)');
@@ -172,7 +179,7 @@
       <div class="sb-row" style="--c:${col(r.c)}"><span class="sw"></span><span class="nm">${r.c}</span>
         <span class="bar"><i style="width:${(r.ratio / maxR) * 100}%"></i></span><span class="rt">${r.ratio.toFixed(2)}</span>
         <span class="sub">dealt ${r.inf} · took ${r.suf}</span></div>`).join('') +
-      `<div class="dim small" style="margin-top:4px">TRIGSITs active: ${fr.trig.filter((t) => t.s === 'active').length}/${fr.trig.length}</div>`;
+      `<div class="dim small" style="margin-top:4px">TRIGSITs: ${fr.trig.filter((t) => t.s === 'active').length} active · ${fr.trig.filter((t) => t.s === 'resolved').length} resolved · ${fr.trig.filter((t) => t.s === 'dormant').length} dormant</div>`;
   }
 
   function quoteCard(q) {
@@ -182,7 +189,7 @@
   function renderFeed(fr) {
     const el = $('#tab-feed');
     if (frame === 0) {
-      el.innerHTML = `<h3>THE WORLD, TURN ZERO</h3><p class="note">${R.players.length} heads of state. ${R.trigsits.length} live crises. Every arsenal at its historical peak.</p>` +
+      el.innerHTML = `<h3>THE WORLD, TURN ZERO</h3><p class="note">${R.players.length} heads of state. ${fr.trig.filter((t) => t.s === 'active').length} live crises, ${fr.trig.filter((t) => t.s === 'dormant').length} more waiting to ignite. Every arsenal at its historical peak, locked behind the threat level.</p>` +
         fr.quotes.map(quoteCard).join('') + `<p class="note">Press ▶ PLAY, or step through turns with ◀ ▶▶.</p>`;
       return;
     }
@@ -342,6 +349,7 @@
     ctx.save(); ctx.beginPath(); gp({ type: 'Sphere' }); ctx.clip();
     ctx.lineWidth = 1.4;
     for (const a of arcs) {
+      if (a.flare) continue;
       const to = a.to || centroids[a.toTerritory]; if (!to) continue;
       ctx.beginPath(); gp({ type: 'LineString', coordinates: [a.from, to] });
       ctx.strokeStyle = col(a.coalition); ctx.globalAlpha = 0.55; ctx.stroke(); ctx.globalAlpha = 1;

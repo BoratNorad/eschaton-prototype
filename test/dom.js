@@ -39,9 +39,10 @@ setTimeout(() => fail('timeout'), 40000);
   await wait(() => $('#tacBtn'));
   console.log('target panel:', $('#tab-target h3').textContent);
   $('#tacBtn').click();
-  // click Berlin trigsit, deploy
-  const berlin = [...w.document.querySelectorAll('g.trig')].find((g) => g.__data__.id === 'berlin');
-  berlin.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  // open one of MY active crises (start crises are random now) and deploy
+  const mine = w.ESCH.S.trigsits.find((t) => t.status === 'active' && t.sides.includes(w.ESCH.S.me.coalition));
+  console.log('my starting crisis:', mine.name, '| threat level', w.ESCH.S.tier, '| tactical button locked:', $('#tacBtn')?.disabled);
+  [...w.document.querySelectorAll('g.trig')].find((g) => g.__data__.id === mine.id).dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
   await wait(() => $('#comBtn'));
   $('#comBtn').click();
   // tabs
